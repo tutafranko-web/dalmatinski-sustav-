@@ -96,7 +96,10 @@
   </section>
 
   <section data-p="tables" class="hidden">
-    <div class="card"><table><thead><tr><th>Stol</th><th>Zona</th><th>Kapacitet</th><th>Aktivan</th><th>QR meni link</th></tr></thead><tbody id="tList"></tbody></table></div>
+    <div class="card"><table><thead><tr><th></th><th>Stol</th><th>Zona</th><th>Kapacitet</th><th>Aktivan</th><th>QR meni link</th></tr></thead><tbody id="tList"></tbody></table>
+      <p class="muted">Spajanje za veće grupe: označi 2+ stola, upiši kapacitet i klikni "Spoji". Kad je spojeni stol rezerviran, zauzeti su i svi njegovi stolovi.</p>
+      <p>Kapacitet spojenih: <input id="cMin" type="number" value="6" style="width:70px"> – <input id="cMax" type="number" value="10" style="width:70px"> <button class="b" id="cSave">Spoji označene</button> <span id="cMsg" class="muted"></span></p>
+    </div>
     <div class="card">
       <b>Dodaj stol</b>
       <div class="grid" style="margin-top:8px">
@@ -129,6 +132,19 @@
       <p><label class="muted">Informacije za AI asistenta (parking, ljubimci, dječja stolica, vegansko…)</label><textarea id="sInfo" rows="5" style="width:100%"></textarea></p>
       <p class="muted" id="sConn"></p>
       <button class="b p" id="sSave">Spremi postavke</button> <span id="sMsg" class="muted"></span>
+    </div>
+    <div class="card">
+      <b>Osoblje</b>
+      <p class="muted">Svaki konobar dobije svoj ključ za panel. Konobar vidi rezervacije i narudžbe, ali ne mijenja meni, stolove ni postavke.</p>
+      <table><tbody id="kList"></tbody></table>
+      <p><input id="kName" placeholder="npr. Konobar Ivan"> <select id="kRole"><option value="staff">konobar</option><option value="owner">vlasnik</option></select>
+        <button class="b" id="kSave">Napravi ključ</button></p>
+      <p id="kNew" class="muted"></p>
+    </div>
+    <div class="card">
+      <b>Brisanje podataka gosta (GDPR)</b>
+      <p class="muted">Na zahtjev gosta: briše ime, mobitel, email, napomene i razgovore. Broj rezervacija ostaje u statistici.</p>
+      <p><input id="gContact" placeholder="mobitel ili email gosta"> <button class="b" id="gDel">Obriši podatke</button> <span id="gMsg" class="muted"></span></p>
     </div>
   </section>
 
@@ -265,12 +281,20 @@ $('mSave').onclick = guard(async () => {
 // ---- stolovi ----
 const loadTables = guard(async () => {
   const list = await api('/tables');
-  $('tList').innerHTML = list.map((t) => `<tr><td>${esc(t.label)}</td><td>${esc(t.zone)}</td><td>${t.min_capacity}–${t.max_capacity}</td>
-    <td><input type="checkbox" data-t="${t.id}" ${t.active ? 'checked' : ''}></td><td><a href="/m/${t.qr_token}" target="_blank">${location.origin}/m/${t.qr_token}</a></td></tr>`).join('');
+  $('tList').innerHTML = list.map((t) => `<tr><td>${t.combo_of ? '' : `<input type="checkbox" data-combo="${t.id}">`}</td>
+    <td>${esc(t.label)}${t.combo_of ? ' <span class="tag">spojeni</span>' : ''}</td><td>${esc(t.zone)}</td><td>${t.min_capacity}–${t.max_capacity}</td>
+    <td><input type="checkbox" data-t="${t.id}" ${t.active ? 'checked' : ''}></td>
+    <td>${t.combo_of ? '<span class="muted">—</span>' : `<a href="/m/${t.qr_token}" target="_blank">${location.origin}/m/${t.qr_token}</a>`}</td></tr>`).join('');
   $('tList').querySelectorAll('[data-t]').forEach((cb) => cb.onchange = guard(() => api(`/tables/${cb.dataset.t}`, { method: 'PUT', body: JSON.stringify({ active: cb.checked }) })));
   $('snipBook').textContent = `<script src="${location.origin}/widget.js" data-restaurant="${S.slug}" async><\/script>`;
   $('snipChat').textContent = `<script src="${location.origin}/chat.js" data-restaurant="${S.slug}" async><\/script>`;
   $('snipLink').textContent = `${location.origin}/b/${S.slug}`;
+});
+$('cSave').onclick = guard(async () => {
+  const ids = [...document.querySelectorAll('[data-combo]:checked')].map((c) => Number(c.dataset.combo));
+  try { await api('/tables', { method: 'POST', body: JSON.stringify({ combo_of: ids, min_capacity: Number($('cMin').value), max_capacity: Number($('cMax').value) }) });
+    $('cMsg').textContent = 'Spojeno.'; loadTables();
+  } catch (e) { $('cMsg').textContent = e.message; }
 });
 $('tSave').onclick = guard(async () => {
   try { await api('/tables', { method: 'POST', body: JSON.stringify({ label: $('tLabel').value, zone: $('tZone').value, min_capacity: Number($('tMin').value), max_capacity: Number($('tMax').value) }) });
@@ -281,6 +305,9 @@ $('tSave').onclick = guard(async () => {
 // ---- postavke ----
 const loadSettings = guard(async () => {
   const s = await api('/settings'); SET = s;
+  const owner = s.role === 'owner';
+  ['menu', 'tables', 'settings', 'stats'].forEach((t) => document.querySelector(`nav button[data-tab=${t}]`).classList.toggle('hidden', !owner));
+  loadStaff();
   $('hName').textContent = s.name;
   $('sName').value = s.name; $('sPhone').value = s.phone || ''; $('sEmail').value = s.email || ''; $('sAddress').value = s.address || '';
   $('sSlot').value = s.slot_minutes; $('sDur').value = s.default_duration_minutes; $('sMax').value = s.max_party_size;
@@ -301,6 +328,29 @@ $('sSave').onclick = guard(async () => {
       google_review_url: $('sReview').value || null, review_mode: $('sReviewMode').value, info_text: $('sInfo').value }) });
     $('sMsg').textContent = 'Spremljeno.'; loadSettings();
   } catch (e) { $('sMsg').textContent = e.message; }
+});
+
+// ---- osoblje i GDPR ----
+const loadStaff = guard(async () => {
+  if (SET?.role !== 'owner') return;
+  const list = await api('/staff');
+  $('kList').innerHTML = list.map((k) => `<tr><td>${esc(k.name)}</td><td>${k.role === 'owner' ? 'vlasnik' : 'konobar'}</td>
+    <td>${k.revoked_at ? '<span class="muted">opozvan</span>' : `<button class="b" data-k="${k.id}">Opozovi</button>`}</td></tr>`).join('') || '<tr><td class="muted">Još nema ključeva.</td></tr>';
+  $('kList').querySelectorAll('[data-k]').forEach((b) => b.onclick = guard(async () => {
+    if (!confirm('Opozvati ključ? Ta osoba se više ne može prijaviti.')) return;
+    await api(`/staff/${b.dataset.k}/revoke`, { method: 'POST', body: '{}' }); loadStaff();
+  }));
+});
+$('kSave').onclick = guard(async () => {
+  const k = await api('/staff', { method: 'POST', body: JSON.stringify({ name: $('kName').value, role: $('kRole').value }) });
+  $('kNew').innerHTML = `Ključ za <b>${esc(k.name)}</b> (prikazuje se samo sada, kopiraj ga): <code>${esc(k.key)}</code> · oznaka restorana: <code>${esc(S.slug)}</code>`;
+  $('kName').value = ''; loadStaff();
+});
+$('gDel').onclick = guard(async () => {
+  const v = $('gContact').value.trim(); if (!v) return;
+  if (!confirm('Trajno obrisati podatke ovog gosta?')) return;
+  const d = await api('/guests/anonymize', { method: 'POST', body: JSON.stringify(v.includes('@') ? { email: v } : { phone: v }) });
+  $('gMsg').textContent = d.anonymized ? 'Obrisano.' : 'Gost nije pronađen.'; $('gContact').value = '';
 });
 
 // ---- statistika ----

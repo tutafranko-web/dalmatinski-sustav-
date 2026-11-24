@@ -21,6 +21,7 @@ async function main() {
       publicBaseUrl: (env.PUBLIC_BASE_URL ?? 'http://localhost:3000').replace(/\/$/, ''),
       anthropicModel: env.ANTHROPIC_MODEL ?? 'claude-haiku-4-5',
       voiceSharedSecret: env.VOICE_SHARED_SECRET ?? '',
+      retellApiKey: env.RETELL_API_KEY ?? '',
       metaVerifyToken: env.META_VERIFY_TOKEN ?? '',
       metaAppSecret: env.META_APP_SECRET ?? '',
       stripeWebhookSecret: env.STRIPE_WEBHOOK_SECRET ?? '',

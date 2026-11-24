@@ -195,7 +195,23 @@ describe('voice agent (Retell funkcije)', () => {
     const cancel = await app.inject({ method: 'POST', url: '/voice/retell/konoba-test', headers: h,
       payload: { name: 'cancel_reservation', args: { code: cr.json().code }, call: { from_number: '+385917776655' } } });
     expect(cancel.json()).toMatchObject({ ok: true, status: 'cancelled' });
+    // "args only" način: ime funkcije u ?fn=
+    const flat = await app.inject({ method: 'POST', url: '/voice/retell/konoba-test?fn=check_availability', headers: h, payload: { date: '2026-07-11', party_size: 2 } });
+    expect(flat.json().available_times.length).toBeGreaterThan(0);
     const inbound = await app.inject({ method: 'POST', url: '/voice/retell/konoba-test/inbound', headers: h, payload: {} });
     expect(inbound.json().call_inbound.dynamic_variables.today).toBe('petak, 2026-07-10');
+  });
+
+  it('prihvaća Retell potpis (HMAC raw body + timestamp) i odbija krivi', async () => {
+    const { db, deps } = await setup();
+    deps.config.retellApiKey = 'retell-key';
+    const app = await buildApp(db, deps);
+    const body = JSON.stringify({ name: 'get_restaurant_info', args: {}, call: { from_number: '+385911111111' } });
+    const v = String(Date.now());
+    const d = createHmac('sha256', 'retell-key').update(body + v).digest('hex');
+    const ok = await app.inject({ method: 'POST', url: '/voice/retell/konoba-test', headers: { 'content-type': 'application/json', 'x-retell-signature': `v=${v},d=${d}` }, payload: body });
+    expect(ok.json().name).toBe('Konoba Test');
+    const bad = await app.inject({ method: 'POST', url: '/voice/retell/konoba-test', headers: { 'content-type': 'application/json', 'x-retell-signature': `v=${v},d=${'0'.repeat(64)}` }, payload: body });
+    expect(bad.statusCode).toBe(401);
   });
 });

@@ -56,7 +56,10 @@ Za **svaku** funkciju:
 
 Točne opise parametara kopiraj iz `src/ai/tools.ts` (`TOOL_DEFINITIONS`).
 
-> Provjeri u Retell dokumentaciji format tijela zahtjeva za custom funkcije (`name`, `args`, `call.from_number`). Server to očekuje; ako Retell promijeni format, prilagodi rutu `/voice/retell/:slug` u `src/server.ts`.
+Format je provjeren u Retell dokumentaciji (studeni 2026.): tijelo je `{ name, args, call }`, a `call.from_number` je broj pozivatelja.
+Ako uključiš **Payload: args only**, tijelo su samo argumenti — tada URL mora biti `.../voice/retell/SLUG?fn=IME_FUNKCIJE`.
+
+**Sigurnost:** postavi `RETELL_API_KEY` u `.env` i server će provjeravati Retellov potpis (`X-Retell-Signature`). Header `x-opsis-secret` i dalje radi kao rezerva.
 
 ## 5. Test
 

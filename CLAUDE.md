@@ -16,7 +16,8 @@ Projekt: Opsis Restoran — multi-tenant sustav za restorane (rezervacije, AI ch
 ## Sljedeći zadaci (po prioritetu)
 1. Deploy na Hostinger VPS (`docker compose up -d --build`), Supabase baza, domena u `Caddyfile`.
 2. Spojiti prave ključeve (.env) i proći ručni test: web rezervacija, WhatsApp poruka, Retell poziv.
-3. Panel: polja za WhatsApp phone number ID, Instagram ID, Stripe Connect onboarding link.
-4. Spajanje stolova za veće grupe.
-5. Korisnici panela (vlasnik/konobar) umjesto jednog ključa.
-6. Fiskalizacija: test na CIS demo, PNP, storno, ispis računa.
+3. Stripe Connect onboarding link iz panela (Express račun).
+4. SMS kao rezervni kanal (npr. Infobip ili Twilio) za goste bez WhatsAppa.
+5. Fiskalizacija: test na CIS demo, PNP, storno, ispis računa.
+
+Gotovo: spojeni stolovi, ključevi za osoblje (owner/staff), GDPR brisanje, integracije preko super admina, Retell potpis.

@@ -36,6 +36,8 @@ export interface DiningTable {
   max_capacity: number;
   active: boolean;
   qr_token: string;
+  /** Spojeni stolovi: ID-jevi stvarnih stolova; null za običan stol. */
+  combo_of: number[] | null;
 }
 
 export type ReservationStatus =

@@ -3,7 +3,8 @@ import type { Restaurant } from './services/types.js';
 export interface Config {
   publicBaseUrl: string;            // npr. https://app.opsisdalmatia.com
   anthropicModel: string;
-  voiceSharedSecret: string;        // tajni ključ za Retell funkcije
+  voiceSharedSecret: string;        // tajni ključ za Retell funkcije (header x-opsis-secret)
+  retellApiKey?: string;            // ako je postavljen, provjerava se i X-Retell-Signature
   metaVerifyToken: string;          // WhatsApp/Instagram webhook verify token
   metaAppSecret: string;            // za provjeru potpisa webhooka
   stripeWebhookSecret: string;

@@ -15,7 +15,11 @@ Jedan server služi više restorana (svaki ima svoj `slug` i ključ za panel).
 | Upit za Google recenziju: konobar u panelu odobri gosta (⭐ Traži recenziju / Ne), poruka ide 2 h nakon posjeta; u postavkama može i automatski ili isključeno | ✅ testirano |
 | Garancija karticom (Stripe Connect, setup mode), istek nakon 30 min, naplata no-showa | ✅ testirano s lažnim Stripeom |
 | AI chatbot (Claude + alati) na webu (`chat.js`), WhatsAppu i Instagramu | ✅ testirano s lažnim modelom |
-| Voice agent: Retell custom funkcije + inbound webhook | ✅ testirano bez Retella |
+| Voice agent: Retell custom funkcije + inbound webhook + provjera Retell potpisa (format provjeren u njihovoj dokumentaciji) | ✅ testirano bez pravog poziva |
+| Spojeni stolovi za veće grupe (rezervacija spojenih blokira sve njihove stolove) | ✅ testirano |
+| Ključevi za osoblje: vlasnik vs konobar (konobar ne mijenja meni/stolove/postavke), opoziv ključa | ✅ testirano |
+| GDPR: brisanje podataka gosta na zahtjev | ✅ testirano |
+| Spajanje WhatsApp/Instagram/Stripe ID-jeva za restoran (`PUT /api/super/restaurants/SLUG/integrations`) | ✅ testirano |
 | Panel za restoran `/admin`: rezervacije, narudžbe (zvuk), meni, stolovi + QR linkovi, postavke, statistika | ✅ testirano u pregledniku |
 | QR meni po stolu `/m/TOKEN`: narudžba, poziv konobara, račun, 14 EU alergena | ✅ testirano u pregledniku |
 | Fiskalizacija (ZKI, potpis, CIS, naknadna dostava) | ⚠️ testirano lokalno, **nije** testirano na CIS demo okolini |
@@ -32,7 +36,7 @@ npm start            # bez DATABASE_URL koristi bazu u memoriji + demo restoran
 - Rezervacija: http://localhost:3000/b/demo-konoba
 - Panel: http://localhost:3000/admin (oznaka `demo-konoba`, ključ `demo-key`)
 - QR meni: http://localhost:3000/m/demo-qr-3
-- Testovi: `npm test` (35 testova) · provjera tipova: `npm run typecheck`
+- Testovi: `npm test` (43 testa) · provjera tipova: `npm run typecheck`
 
 ## Produkcija (Hostinger VPS + Supabase)
 
@@ -81,9 +85,7 @@ tests/                   vitest (pravi Postgres u memoriji — PGlite)
 
 ## Poznata ograničenja (sljedeći koraci)
 
-- Spajanje stolova za velike grupe nije podržano (grupe > najveći stol → telefon).
-- Panel nema polja za WhatsApp/Instagram/Stripe ID — upisuju se SQL-om.
-- Admin pristup je jedan ključ po restoranu (nema korisnika i uloga).
 - Nema SMS-a (samo WhatsApp + email).
 - Rate limit je u memoriji jednog procesa — za više instanci treba Redis.
-- GDPR: chat razgovori se brišu nakon 30 dana; treba dodati brisanje gostiju na zahtjev i DPA s restoranom.
+- Stripe Connect onboarding link se još radi ručno u Stripe dashboardu.
+- Fiskalizacija nije testirana na CIS demo okolini.

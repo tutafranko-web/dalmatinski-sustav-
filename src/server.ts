@@ -1,4 +1,4 @@
-import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
+import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from 'fastify';
@@ -7,7 +7,7 @@ import type { Db } from './db.js';
 import type { Deps } from './deps.js';
 import { findAvailability, getRestaurantBySlug } from './services/availability.js';
 import {
-  cancelReservation, createReservation, getByCode, listForDay, modifyReservation, setStatus, verifyGuest, confirmGuarantee, decideReview,
+  cancelReservation, createReservation, getByCode, listForDay, modifyReservation, setStatus, verifyGuest, confirmGuarantee, decideReview, normalizePhone,
 } from './services/reservations.js';
 import { AppError, type Restaurant } from './services/types.js';
 import { utcToLocal } from './time.js';
@@ -167,10 +167,22 @@ export async function buildApp(db: Db, deps: Deps, opts: AppOptions = {}): Promi
   });
 
   // ---------- admin (panel restorana) ----------
-  async function admin(req: any): Promise<Restaurant> {
+  /** Vlasnik (admin_api_key ili staff ključ s ulogom owner) može sve; konobar (staff) samo rezervacije, narudžbe i račune. */
+  async function admin(req: any, ownerOnly = false): Promise<Restaurant> {
     const r = await getRestaurantBySlug(db, req.params.slug);
     const auth = String(req.headers.authorization ?? '').replace(/^Bearer\s+/i, '');
-    if (!auth || !safeEqual(auth, r.admin_api_key)) throw new AppError(401, 'unauthorized', 'Neispravan ključ');
+    if (!auth) throw new AppError(401, 'unauthorized', 'Neispravan ključ');
+    let role: 'owner' | 'staff' | null = safeEqual(auth, r.admin_api_key) ? 'owner' : null;
+    if (!role) {
+      const k = (await db.query<{ role: 'owner' | 'staff'; name: string }>(
+        'select role, name from staff_keys where restaurant_id = $1 and key_hash = $2 and revoked_at is null',
+        [r.id, createHash('sha256').update(auth).digest('hex')],
+      )).rows[0];
+      if (k) { role = k.role; req.staffName = k.name; }
+    }
+    if (!role) throw new AppError(401, 'unauthorized', 'Neispravan ključ');
+    if (ownerOnly && role !== 'owner') throw new AppError(403, 'owner_only', 'Ovo može samo vlasnik');
+    req.role = role;
     return r;
   }
 
@@ -225,11 +237,12 @@ export async function buildApp(db: Db, deps: Deps, opts: AppOptions = {}): Promi
     out.stripe_connected = !!r.stripe_account_id;
     out.whatsapp_connected = !!r.whatsapp_phone_number_id;
     out.fiscal_enabled = !!(r.fiscal_config as any)?.enabled;
+    out.role = req.role;
     return out;
   });
 
   app.put('/api/admin/:slug/settings', async (req: any) => {
-    const r = await admin(req);
+    const r = await admin(req, true);
     const b = req.body ?? {};
     const sets: string[] = [], vals: unknown[] = [r.id];
     for (const k of SETTINGS) {
@@ -252,18 +265,28 @@ export async function buildApp(db: Db, deps: Deps, opts: AppOptions = {}): Promi
   });
 
   app.post('/api/admin/:slug/tables', async (req: any, reply: any) => {
-    const r = await admin(req);
+    const r = await admin(req, true);
     const b = req.body ?? {};
-    if (!b.label || !(b.max_capacity >= 1)) throw new AppError(400, 'bad_table', 'Treba oznaka i kapacitet');
+    // spojeni stolovi: { "combo_of": [3, 4], "max_capacity": 8 } — oznaka i zona se mogu izostaviti
+    let combo: number[] | null = null, zone = b.zone ?? 'unutra', label = b.label;
+    if (Array.isArray(b.combo_of)) {
+      combo = [...new Set(b.combo_of.map(Number))] as number[];
+      if (combo.length < 2) throw new AppError(400, 'bad_combo', 'Spajaju se barem 2 stola');
+      const parts = (await db.query('select id, label, zone, combo_of from dining_tables where restaurant_id = $1 and id = any($2)', [r.id, combo])).rows;
+      if (parts.length !== combo.length || parts.some((p: any) => p.combo_of)) throw new AppError(400, 'bad_combo', 'Spajaju se samo postojeći obični stolovi');
+      label = label || parts.map((p: any) => p.label).join('+');
+      zone = b.zone ?? parts[0].zone;
+    }
+    if (!label || !(b.max_capacity >= 1)) throw new AppError(400, 'bad_table', 'Treba oznaka i kapacitet');
     const row = (await db.query(
-      `insert into dining_tables (restaurant_id, label, zone, min_capacity, max_capacity, qr_token) values ($1,$2,$3,$4,$5,$6) returning *`,
-      [r.id, String(b.label), b.zone ?? 'unutra', b.min_capacity ?? 1, b.max_capacity, randomBytes(9).toString('base64url')],
+      `insert into dining_tables (restaurant_id, label, zone, min_capacity, max_capacity, qr_token, combo_of) values ($1,$2,$3,$4,$5,$6,$7) returning *`,
+      [r.id, String(label), zone, b.min_capacity ?? 1, b.max_capacity, randomBytes(9).toString('base64url'), combo],
     )).rows[0];
     return reply.status(201).send(row);
   });
 
   app.put('/api/admin/:slug/tables/:id', async (req: any) => {
-    const r = await admin(req);
+    const r = await admin(req, true);
     const b = req.body ?? {};
     const row = (await db.query(
       `update dining_tables set label = coalesce($3, label), zone = coalesce($4, zone), min_capacity = coalesce($5, min_capacity),
@@ -279,11 +302,11 @@ export async function buildApp(db: Db, deps: Deps, opts: AppOptions = {}): Promi
     return (await db.query('select * from menu_items where restaurant_id = $1 order by sort, category, id', [r.id])).rows;
   });
   app.post('/api/admin/:slug/menu', async (req: any, reply: any) => {
-    const r = await admin(req);
+    const r = await admin(req, true);
     return reply.status(201).send(await upsertMenuItem(db, r.id, req.body ?? {}));
   });
   app.put('/api/admin/:slug/menu/:id', async (req: any) => {
-    const r = await admin(req);
+    const r = await admin(req, true);
     return upsertMenuItem(db, r.id, req.body ?? {}, Number(req.params.id));
   });
 
@@ -308,7 +331,7 @@ export async function buildApp(db: Db, deps: Deps, opts: AppOptions = {}): Promi
   });
 
   app.get('/api/admin/:slug/stats', async (req: any) => {
-    const r = await admin(req);
+    const r = await admin(req, true);
     const from = req.query.from ? new Date(req.query.from) : new Date(deps.now().getTime() - 30 * 86400_000);
     const to = req.query.to ? new Date(req.query.to) : deps.now();
     const rows = (await db.query(
@@ -332,6 +355,72 @@ export async function buildApp(db: Db, deps: Deps, opts: AppOptions = {}): Promi
       [b.slug, b.name ?? b.slug, b.phone ?? null, b.email ?? null, b.address ?? null, JSON.stringify(b.opening_hours ?? []), adminKey],
     )).rows[0];
     return reply.status(201).send({ ...r, admin_api_key: adminKey });
+  });
+
+  // ---------- ključevi za osoblje ----------
+  app.get('/api/admin/:slug/staff', async (req: any) => {
+    const r = await admin(req, true);
+    return (await db.query('select id, name, role, created_at, revoked_at from staff_keys where restaurant_id = $1 order by id', [r.id])).rows;
+  });
+  app.post('/api/admin/:slug/staff', async (req: any, reply: any) => {
+    const r = await admin(req, true);
+    const name = String(req.body?.name ?? '').trim();
+    const role = req.body?.role === 'owner' ? 'owner' : 'staff';
+    if (!name) throw new AppError(400, 'name_required', 'Upiši ime (npr. "Konobar Ivan")');
+    const key = randomBytes(18).toString('base64url');
+    const row = (await db.query(
+      'insert into staff_keys (restaurant_id, name, role, key_hash) values ($1,$2,$3,$4) returning id, name, role',
+      [r.id, name, role, createHash('sha256').update(key).digest('hex')],
+    )).rows[0];
+    // ključ se prikazuje samo jednom
+    return reply.status(201).send({ ...row, key });
+  });
+  app.post('/api/admin/:slug/staff/:id/revoke', async (req: any) => {
+    const r = await admin(req, true);
+    const row = (await db.query('update staff_keys set revoked_at = now() where id = $1 and restaurant_id = $2 returning id', [Number(req.params.id), r.id])).rows[0];
+    if (!row) throw new AppError(404, 'not_found', 'Ključ ne postoji');
+    return { revoked: true };
+  });
+
+  // ---------- GDPR: brisanje podataka gosta na zahtjev ----------
+  app.post('/api/admin/:slug/guests/anonymize', async (req: any) => {
+    const r = await admin(req, true);
+    const phone = normalizePhone(req.body?.phone);
+    const email = req.body?.email ? String(req.body.email).trim().toLowerCase() : null;
+    if (!phone && !email) throw new AppError(400, 'contact_required', 'Upiši mobitel ili email gosta');
+    const guests = (await db.query(
+      'select id, phone from guests where restaurant_id = $1 and ((phone is not null and phone = $2) or (email is not null and lower(email) = $3))',
+      [r.id, phone, email],
+    )).rows;
+    for (const g of guests) {
+      await db.query(
+        `update guests set name = 'Obrisani gost', phone = null, email = null, notes = '', stripe_customer_id = null, marketing_consent = false, anonymized_at = now() where id = $1`,
+        [g.id],
+      );
+      await db.query(`update reservations set notes = '' where guest_id = $1`, [g.id]);
+      await db.query(`delete from outbox where sent_at is null and restaurant_id = $1 and (recipient = $2 or lower(recipient) = $3)`, [r.id, g.phone, email]);
+      if (g.phone) await db.query(`delete from chat_sessions where restaurant_id = $1 and external_id = $2`, [r.id, g.phone]);
+    }
+    return { anonymized: guests.length };
+  });
+
+  // ---------- super admin: spajanje servisa za restoran ----------
+  app.put('/api/super/restaurants/:slug/integrations', async (req: any) => {
+    const key = String(req.headers['x-super-key'] ?? '');
+    if (!deps.config.superAdminKey || !safeEqual(key, deps.config.superAdminKey)) throw new AppError(401, 'unauthorized', 'Neispravan ključ');
+    const r = await getRestaurantBySlug(db, req.params.slug);
+    const b = req.body ?? {};
+    const fields = ['whatsapp_phone_number_id', 'instagram_account_id', 'stripe_account_id', 'fiscal_config'] as const;
+    const sets: string[] = [], vals: unknown[] = [r.id];
+    for (const f of fields) {
+      if (!(f in b)) continue;
+      if (f === 'stripe_account_id' && b[f] !== null && !/^acct_[A-Za-z0-9]+$/.test(b[f])) throw new AppError(400, 'bad_value', 'stripe_account_id mora počinjati s acct_');
+      vals.push(f === 'fiscal_config' ? JSON.stringify(b[f] ?? {}) : b[f] === '' ? null : b[f]);
+      sets.push(`${f} = $${vals.length}`);
+    }
+    if (!sets.length) throw new AppError(400, 'nothing', 'Nema polja za promjenu');
+    await db.query(`update restaurants set ${sets.join(', ')} where id = $1`, vals);
+    return { updated: sets.length };
   });
 
   // ---------- Stripe webhook ----------
@@ -399,7 +488,21 @@ export async function buildApp(db: Db, deps: Deps, opts: AppOptions = {}): Promi
   }
 
   // ---------- Voice agent (Retell custom functions) ----------
+  /**
+   * Retell potpisuje zahtjeve: X-Retell-Signature = "v=<ms>,d=<hex>", d = HMAC-SHA256(raw_body + v) s Retell API ključem.
+   * Prihvaćamo potpis (ako je RETELL_API_KEY postavljen) ili naš header x-opsis-secret.
+   */
   function voiceAuth(req: any) {
+    const sigHeader = String(req.headers['x-retell-signature'] ?? '');
+    const key = deps.config.retellApiKey;
+    if (key && sigHeader) {
+      const m = /^v=(\d+),d=([0-9a-f]+)$/i.exec(sigHeader);
+      if (m && Math.abs(Date.now() - Number(m[1])) < 5 * 60_000) {
+        const expected = createHmac('sha256', key).update((req.rawBody ?? '') + m[1]).digest('hex');
+        if (safeEqual(expected, m[2].toLowerCase())) return;
+      }
+      throw new AppError(401, 'bad_signature', 'Neispravan Retell potpis');
+    }
     const s = String(req.headers['x-opsis-secret'] ?? req.query?.secret ?? '');
     if (!deps.config.voiceSharedSecret || !safeEqual(s, deps.config.voiceSharedSecret)) throw new AppError(401, 'unauthorized', 'Neispravan ključ');
   }
@@ -409,9 +512,11 @@ export async function buildApp(db: Db, deps: Deps, opts: AppOptions = {}): Promi
     voiceAuth(req);
     const r = await getRestaurantBySlug(db, req.params.slug);
     const b = req.body ?? {};
+    // zadani format: { name, args, call }; uz "Payload: args only" tijelo su samo argumenti, a ime ide u ?fn=
     const name = String(b.name ?? req.query.fn ?? '');
+    const args = b.args ?? (b.name ? {} : b);
     const callerPhone = b.call?.from_number ?? null;
-    return executeTool(db, deps, r, name, b.args ?? {}, { source: 'voice', callerPhone });
+    return executeTool(db, deps, r, name, args, { source: 'voice', callerPhone });
   });
 
   // Retell inbound webhook: dinamičke varijable za prompt (današnji datum, radno vrijeme...)

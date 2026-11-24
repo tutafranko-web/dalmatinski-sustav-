@@ -33,15 +33,17 @@ function slotToLocal(date: string, minutes: number): { date: string; time: strin
   return { date: next, time: fromMinutes(minutes - 1440) };
 }
 
-interface BusyInterval { table_id: number; start: number; end: number; reservation_id: number }
+interface BusyInterval { table_id: number; tables: number[]; start: number; end: number; reservation_id: number }
 
 async function loadDay(db: Db, r: Restaurant, date: string) {
-  const tables = (
-    await db.query<DiningTable>(
-      'select * from dining_tables where restaurant_id = $1 and active order by max_capacity, id',
-      [r.id],
-    )
+  const all = (
+    await db.query<DiningTable>('select * from dining_tables where restaurant_id = $1', [r.id])
   ).rows;
+  // najmanji kapacitet prvi; kod istog kapaciteta običan stol prije spojenih
+  const tables = all
+    .filter((t) => t.active)
+    .sort((a, b) => a.max_capacity - b.max_capacity || Number(!!a.combo_of?.length) - Number(!!b.combo_of?.length) || a.id - b.id);
+  const physical = new Map<number, number[]>(all.map((t) => [t.id, t.combo_of?.length ? t.combo_of : [t.id]]));
   // učitaj od 00:00 dana do 12:00 sljedećeg (zbog rada iza ponoći)
   const from = localToUtc(date, '00:00', r.timezone);
   const to = new Date(from.getTime() + 36 * 3600_000);
@@ -54,23 +56,25 @@ async function loadDay(db: Db, r: Restaurant, date: string) {
     )
   ).rows.map<BusyInterval>((x) => ({
     table_id: x.table_id,
+    tables: physical.get(x.table_id) ?? [x.table_id],
     reservation_id: x.id,
     start: new Date(x.start_at).getTime(),
     end: new Date(x.end_at).getTime(),
   }));
-  return { tables, busy };
+  return { tables, busy, physical };
 }
 
 function freeTable(
-  tables: DiningTable[], busy: BusyInterval[], partySize: number,
+  day: { tables: DiningTable[]; busy: BusyInterval[]; physical: Map<number, number[]> }, partySize: number,
   startMs: number, endMs: number, zone?: string, excludeReservationId?: number,
 ): DiningTable | null {
   // najmanji stol koji odgovara (tablice su sortirane po kapacitetu)
-  for (const t of tables) {
+  for (const t of day.tables) {
     if (zone && t.zone !== zone) continue;
     if (partySize < t.min_capacity || partySize > t.max_capacity) continue;
-    const clash = busy.some(
-      (b) => b.table_id === t.id && b.reservation_id !== excludeReservationId && b.start < endMs && b.end > startMs,
+    const mine = day.physical.get(t.id)!;
+    const clash = day.busy.some(
+      (b) => b.reservation_id !== excludeReservationId && b.start < endMs && b.end > startMs && b.tables.some((x) => mine.includes(x)),
     );
     if (!clash) return t;
   }
@@ -87,8 +91,8 @@ export async function findAvailability(
   if (!(opts.partySize >= 1)) throw new AppError(400, 'bad_party', 'Broj osoba mora biti barem 1');
   if (opts.partySize > r.max_party_size) return [];
   const now = (opts.now ?? new Date()).getTime();
-  const { tables, busy } = await loadDay(db, r, opts.date);
-  const zones = [...new Set(tables.map((t) => t.zone))];
+  const day = await loadDay(db, r, opts.date);
+  const zones = [...new Set(day.tables.map((t) => t.zone))];
   const out: Slot[] = [];
   for (const w of openingWindows(r, opts.date)) {
     for (let m = w.start; m <= w.end - LAST_SEATING_BEFORE_CLOSE; m += r.slot_minutes) {
@@ -96,7 +100,7 @@ export async function findAvailability(
       const start = localToUtc(local.date, local.time, r.timezone).getTime();
       if (start < now + 30 * 60_000) continue; // najmanje 30 min unaprijed
       const end = start + r.default_duration_minutes * 60_000;
-      const okZones = zones.filter((z) => (!opts.zone || z === opts.zone) && freeTable(tables, busy, opts.partySize, start, end, z));
+      const okZones = zones.filter((z) => (!opts.zone || z === opts.zone) && freeTable(day, opts.partySize, start, end, z));
       if (okZones.length) out.push({ ...local, zones: okZones });
     }
   }
@@ -117,9 +121,9 @@ export async function pickTable(
   const withinHours =
     openingWindows(r, opts.date).some((w) => m >= w.start && m <= w.end - LAST_SEATING_BEFORE_CLOSE) ||
     openingWindows(r, prev).some((w) => m + 1440 >= w.start && m + 1440 <= w.end - LAST_SEATING_BEFORE_CLOSE);
-  const { tables, busy } = await loadDay(db, r, utcToLocal(new Date(start.getTime() - 12 * 3600_000), r.timezone).date);
+  const day = await loadDay(db, r, utcToLocal(new Date(start.getTime() - 12 * 3600_000), r.timezone).date);
   const table = withinHours
-    ? freeTable(tables, busy, opts.partySize, start.getTime(), end.getTime(), opts.zone, opts.excludeReservationId)
+    ? freeTable(day, opts.partySize, start.getTime(), end.getTime(), opts.zone, opts.excludeReservationId)
     : null;
   return { table, start, end, withinHours };
 }
