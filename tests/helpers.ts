@@ -24,6 +24,9 @@ export function fakePayments(): Payments & { charges: any[]; sessions: any[] } {
       sessions.push({ ...i, ...s });
       return s;
     },
+    async createOnboardingLink(i) {
+      return { accountId: i.restaurant.stripe_account_id ?? 'acct_new123', url: 'https://connect.stripe.test/onboarding' };
+    },
     async chargeNoShow(i) {
       charges.push(i);
       return `pi_test_${charges.length}`;

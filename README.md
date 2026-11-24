@@ -19,6 +19,7 @@ Jedan server služi više restorana (svaki ima svoj `slug` i ključ za panel).
 | Spojeni stolovi za veće grupe (rezervacija spojenih blokira sve njihove stolove) | ✅ testirano |
 | Ključevi za osoblje: vlasnik vs konobar (konobar ne mijenja meni/stolove/postavke), opoziv ključa | ✅ testirano |
 | GDPR: brisanje podataka gosta na zahtjev | ✅ testirano |
+| Stripe Connect: vlasnik u panelu klikne "Spoji Stripe" i prođe onboarding | ✅ testirano s lažnim Stripeom |
 | Spajanje WhatsApp/Instagram/Stripe ID-jeva za restoran (`PUT /api/super/restaurants/SLUG/integrations`) | ✅ testirano |
 | Panel za restoran `/admin`: rezervacije, narudžbe (zvuk), meni, stolovi + QR linkovi, postavke, statistika | ✅ testirano u pregledniku |
 | QR meni po stolu `/m/TOKEN`: narudžba, poziv konobara, račun, 14 EU alergena | ✅ testirano u pregledniku |
@@ -36,7 +37,7 @@ npm start            # bez DATABASE_URL koristi bazu u memoriji + demo restoran
 - Rezervacija: http://localhost:3000/b/demo-konoba
 - Panel: http://localhost:3000/admin (oznaka `demo-konoba`, ključ `demo-key`)
 - QR meni: http://localhost:3000/m/demo-qr-3
-- Testovi: `npm test` (43 testa) · provjera tipova: `npm run typecheck`
+- Testovi: `npm test` (44 testa) · provjera tipova: `npm run typecheck`
 
 ## Produkcija (Hostinger VPS + Supabase)
 
@@ -87,5 +88,4 @@ tests/                   vitest (pravi Postgres u memoriji — PGlite)
 
 - Nema SMS-a (samo WhatsApp + email).
 - Rate limit je u memoriji jednog procesa — za više instanci treba Redis.
-- Stripe Connect onboarding link se još radi ručno u Stripe dashboardu.
 - Fiskalizacija nije testirana na CIS demo okolini.

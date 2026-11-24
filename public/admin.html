@@ -131,6 +131,7 @@
         <select id="sReviewMode"><option value="approval">Konobar odobrava za svakog gosta</option><option value="auto">Šalji automatski svima koji su bili</option><option value="off">Ne šalji</option></select></p>
       <p><label class="muted">Informacije za AI asistenta (parking, ljubimci, dječja stolica, vegansko…)</label><textarea id="sInfo" rows="5" style="width:100%"></textarea></p>
       <p class="muted" id="sConn"></p>
+      <p><button class="b" id="sStripe">Spoji Stripe (za garanciju karticom)</button> <span class="muted">Otvara Stripe, gdje restoran upiše podatke firme i IBAN. Novac od no-showa ide izravno restoranu.</span></p>
       <button class="b p" id="sSave">Spremi postavke</button> <span id="sMsg" class="muted"></span>
     </div>
     <div class="card">
@@ -329,6 +330,8 @@ $('sSave').onclick = guard(async () => {
     $('sMsg').textContent = 'Spremljeno.'; loadSettings();
   } catch (e) { $('sMsg').textContent = e.message; }
 });
+
+$('sStripe').onclick = guard(async () => { const d = await api('/stripe/onboard', { method: 'POST', body: '{}' }); location.href = d.url; });
 
 // ---- osoblje i GDPR ----
 const loadStaff = guard(async () => {

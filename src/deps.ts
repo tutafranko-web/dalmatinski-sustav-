@@ -17,6 +17,8 @@ export interface Payments {
     restaurant: Restaurant; reservationCode: string; guestEmail?: string | null;
     successUrl: string; cancelUrl: string; customerId?: string | null;
   }): Promise<{ id: string; url: string }>;
+  /** Stripe Connect: otvara (ili nastavlja) onboarding restorana. Vraća ID računa i link za unos podataka. */
+  createOnboardingLink(input: { restaurant: Restaurant; returnUrl: string; refreshUrl: string }): Promise<{ accountId: string; url: string }>;
   /** Naplata no-showa sa spremljene kartice. Vraća ID naplate. */
   chargeNoShow(input: {
     restaurant: Restaurant; paymentMethodId: string; customerId: string;

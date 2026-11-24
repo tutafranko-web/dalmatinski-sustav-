@@ -28,6 +28,18 @@ export function stripePayments(secretKey: string): Payments {
       );
       return { id: s.id, url: s.url! };
     },
+    async createOnboardingLink({ restaurant, returnUrl, refreshUrl }) {
+      const accountId = restaurant.stripe_account_id ?? (await stripe.accounts.create({
+        type: 'express',
+        country: 'HR',
+        email: restaurant.email ?? undefined,
+        business_profile: { name: restaurant.name, mcc: '5812' }, // 5812 = restorani
+        capabilities: { card_payments: { requested: true }, transfers: { requested: true } },
+        metadata: { slug: restaurant.slug },
+      })).id;
+      const link = await stripe.accountLinks.create({ account: accountId, type: 'account_onboarding', return_url: returnUrl, refresh_url: refreshUrl });
+      return { accountId, url: link.url };
+    },
     async chargeNoShow({ restaurant, paymentMethodId, customerId, amountCents, reservationCode }) {
       const pi = await stripe.paymentIntents.create(
         {

@@ -357,6 +357,16 @@ export async function buildApp(db: Db, deps: Deps, opts: AppOptions = {}): Promi
     return reply.status(201).send({ ...r, admin_api_key: adminKey });
   });
 
+  // ---------- Stripe Connect: vlasnik spaja svoj Stripe račun ----------
+  app.post('/api/admin/:slug/stripe/onboard', async (req: any) => {
+    const r = await admin(req, true);
+    if (!deps.payments) throw new AppError(503, 'stripe_disabled', 'Stripe nije podešen na serveru');
+    const back = `${deps.config.publicBaseUrl}/admin`;
+    const { accountId, url } = await deps.payments.createOnboardingLink({ restaurant: r, returnUrl: back, refreshUrl: back });
+    if (accountId !== r.stripe_account_id) await db.query('update restaurants set stripe_account_id = $2 where id = $1', [r.id, accountId]);
+    return { url };
+  });
+
   // ---------- ključevi za osoblje ----------
   app.get('/api/admin/:slug/staff', async (req: any) => {
     const r = await admin(req, true);

@@ -102,4 +102,12 @@ describe('GDPR i integracije', () => {
     const s = await app.inject({ url: '/api/admin/konoba-test/settings', headers: OWNER });
     expect(s.json()).toMatchObject({ stripe_connected: true, whatsapp_connected: true });
   });
+
+  it('vlasnik dobije Stripe Connect onboarding link, račun se sprema', async () => {
+    const { db, deps } = await setup();
+    const app = await buildApp(db, deps);
+    const res = await app.inject({ method: 'POST', url: '/api/admin/konoba-test/stripe/onboard', headers: OWNER, payload: {} });
+    expect(res.json().url).toContain('connect.stripe.test');
+    expect((await db.query('select stripe_account_id from restaurants')).rows[0].stripe_account_id).toBe('acct_new123');
+  });
 });
