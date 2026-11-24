@@ -19,6 +19,7 @@ export interface Restaurant {
   no_show_fee_cents: number;
   stripe_account_id: string | null;
   google_review_url: string | null;
+  review_mode: 'approval' | 'auto' | 'off';
   whatsapp_phone_number_id: string | null;
   instagram_account_id: string | null;
   admin_api_key: string;
@@ -61,6 +62,7 @@ export interface Reservation {
   guarantee_expires_at: Date | null;
   reminder_sent_at: Date | null;
   review_request_sent_at: Date | null;
+  review_decision: 'approved' | 'declined' | null;
 }
 
 export class AppError extends Error {

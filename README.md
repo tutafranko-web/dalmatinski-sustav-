@@ -11,7 +11,8 @@ Jedan server služi više restorana (svaki ima svoj `slug` i ključ za panel).
 | Rezervacije: stolovi, zone, radno vrijeme (i iza ponoći), zatvoreni dani, dodjela najmanjeg stola, zaštita od dvostrukog bukiranja | ✅ testirano |
 | Stranica za rezervaciju `/b/SLUG` (HR/EN/DE) + gumb za web restorana (`widget.js`) | ✅ testirano u pregledniku |
 | Pregled i otkaz rezervacije za gosta (šifra + mobitel/email) | ✅ |
-| Potvrde, izmjene, otkazi, podsjetnik 24 h prije, upit za recenziju 2 h nakon posjeta (WhatsApp predlošci + email) | ✅ testirano s lažnim slanjem |
+| Potvrde, izmjene, otkazi, podsjetnik 24 h prije (WhatsApp predlošci + email) | ✅ testirano s lažnim slanjem |
+| Upit za Google recenziju: konobar u panelu odobri gosta (⭐ Traži recenziju / Ne), poruka ide 2 h nakon posjeta; u postavkama može i automatski ili isključeno | ✅ testirano |
 | Garancija karticom (Stripe Connect, setup mode), istek nakon 30 min, naplata no-showa | ✅ testirano s lažnim Stripeom |
 | AI chatbot (Claude + alati) na webu (`chat.js`), WhatsAppu i Instagramu | ✅ testirano s lažnim modelom |
 | Voice agent: Retell custom funkcije + inbound webhook | ✅ testirano bez Retella |
@@ -31,7 +32,7 @@ npm start            # bez DATABASE_URL koristi bazu u memoriji + demo restoran
 - Rezervacija: http://localhost:3000/b/demo-konoba
 - Panel: http://localhost:3000/admin (oznaka `demo-konoba`, ključ `demo-key`)
 - QR meni: http://localhost:3000/m/demo-qr-3
-- Testovi: `npm test` (31 test) · provjera tipova: `npm run typecheck`
+- Testovi: `npm test` (35 testova) · provjera tipova: `npm run typecheck`
 
 ## Produkcija (Hostinger VPS + Supabase)
 

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { setup } from './helpers.js';
 import { findAvailability } from '../src/services/availability.js';
 import {
-  cancelReservation, createReservation, modifyReservation, normalizePhone, setStatus, confirmGuarantee,
+  cancelReservation, createReservation, modifyReservation, normalizePhone, setStatus, confirmGuarantee, decideReview,
 } from '../src/services/reservations.js';
 import { tick } from '../src/jobs/scheduler.js';
 import { localToUtc, utcToLocal } from '../src/time.js';
@@ -145,8 +145,59 @@ describe('scheduler', () => {
     await setStatus(db, deps, r, reservation.id, 'seated');
     setNow(new Date('2026-07-12T21:30:00Z')); // 2,5 h nakon kraja
     res = await tick(db, deps);
+    expect(res.reviews).toBe(0); // zadano: čeka odobrenje konobara
+
+    await decideReview(db, r, reservation.id, true);
+    res = await tick(db, deps);
     expect(res.reviews).toBe(1);
     const last = transport.sent.at(-1)!;
     expect(last.body.text).toContain('https://g.page/r/test/review');
+    expect((await tick(db, deps)).reviews).toBe(0); // ne šalje dvaput
+    await expect(decideReview(db, r, reservation.id, true)).rejects.toMatchObject({ code: 'already_sent' });
+  });
+});
+
+describe('upit za recenziju', () => {
+  async function visited(mode: string) {
+    const ctx = await setup();
+    await ctx.db.query('update restaurants set review_mode = $2 where id = $1', [ctx.r.id, mode]);
+    ctx.r.review_mode = mode as any;
+    const { reservation } = await createReservation(ctx.db, ctx.deps, ctx.r, { name: 'Ana', email: 'ana@test.hr', partySize: 2, date: '2026-07-10', time: '13:00', source: 'web' });
+    await setStatus(ctx.db, ctx.deps, ctx.r, reservation.id, 'seated');
+    return { ...ctx, reservation };
+  }
+
+  it('odobreno prije kraja posjeta šalje se tek 2 h nakon kraja', async () => {
+    const { db, deps, r, reservation, setNow } = await visited('approval');
+    await decideReview(db, r, reservation.id, true);
+    setNow(new Date('2026-07-10T13:30:00Z')); // 30 min nakon kraja
+    expect((await tick(db, deps)).reviews).toBe(0);
+    setNow(new Date('2026-07-10T15:10:00Z'));
+    expect((await tick(db, deps)).reviews).toBe(1);
+  });
+
+  it('odbijeno se ne šalje, ni u automatskom načinu', async () => {
+    const { db, deps, r, reservation, setNow } = await visited('auto');
+    await decideReview(db, r, reservation.id, false);
+    setNow(new Date('2026-07-10T16:00:00Z'));
+    expect((await tick(db, deps)).reviews).toBe(0);
+  });
+
+  it('automatski način šalje bez odobrenja, isključen ne šalje nikad', async () => {
+    const a = await visited('auto');
+    a.setNow(new Date('2026-07-10T16:00:00Z'));
+    expect((await tick(a.db, a.deps)).reviews).toBe(1);
+    const off = await visited('off');
+    await off.db.query(`update reservations set review_decision = 'approved' where id = $1`, [off.reservation.id]);
+    off.setNow(new Date('2026-07-10T16:00:00Z'));
+    expect((await tick(off.db, off.deps)).reviews).toBe(0);
+  });
+
+  it('ne traži recenziju od gosta koji nije došao', async () => {
+    const { db, deps, r } = await setup();
+    const { reservation } = await createReservation(db, deps, r, { name: 'B', email: 'b@test.hr', partySize: 2, date: '2026-07-11', time: '13:00', source: 'web' });
+    await expect(decideReview(db, r, reservation.id, true)).rejects.toMatchObject({ code: 'not_visited' });
+    await setStatus(db, deps, r, reservation.id, 'no_show');
+    await expect(decideReview(db, r, reservation.id, true)).rejects.toMatchObject({ code: 'not_visited' });
   });
 });

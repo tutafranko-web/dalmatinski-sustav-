@@ -308,3 +308,18 @@ export async function listForDay(db: Db, r: Restaurant, date: string) {
     )
   ).rows;
 }
+
+/** Konobar odobrava ili odbija slanje upita za Google recenziju (samo za goste koji su bili). */
+export async function decideReview(db: Db, r: Restaurant, id: number, approve: boolean) {
+  const res = (await db.query<Reservation>('select * from reservations where id = $1 and restaurant_id = $2', [id, r.id])).rows[0];
+  if (!res) throw new AppError(404, 'reservation_not_found', 'Rezervacija nije pronađena');
+  if (!['seated', 'completed'].includes(res.status)) throw new AppError(409, 'not_visited', 'Recenzija se traži samo od gostiju koji su bili');
+  if (res.review_request_sent_at) throw new AppError(409, 'already_sent', 'Upit za recenziju je već poslan');
+  if (approve && !r.google_review_url) throw new AppError(409, 'no_review_url', 'U postavkama nedostaje link za Google recenziju');
+  return (
+    await db.query<Reservation>(
+      `update reservations set review_decision = $2, review_decided_at = now(), updated_at = now() where id = $1 returning *`,
+      [id, approve ? 'approved' : 'declined'],
+    )
+  ).rows[0];
+}

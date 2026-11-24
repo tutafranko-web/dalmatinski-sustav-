@@ -73,10 +73,14 @@ describe('admin API', () => {
     expect(list.json().reservations[0]).toMatchObject({ guest_name: 'Telefonski gost', table_label: '3', source: 'admin' });
     const st = await app.inject({ method: 'POST', url: `/api/admin/konoba-test/reservations/${res.json().id}/status`, headers: h, payload: { status: 'seated' } });
     expect(st.json().status).toBe('seated');
+    const rv = await app.inject({ method: 'POST', url: `/api/admin/konoba-test/reservations/${res.json().id}/review`, headers: h, payload: { approve: true } });
+    expect(rv.json().review_decision).toBe('approved');
+    const badMode = await app.inject({ method: 'PUT', url: '/api/admin/konoba-test/settings', headers: h, payload: { review_mode: 'uvijek' } });
+    expect(badMode.statusCode).toBe(400);
     const put = await app.inject({ method: 'PUT', url: '/api/admin/konoba-test/settings', headers: h, payload: { max_party_size: 8, slug: 'hack' } });
     expect(put.json().updated).toBe(1);
     const s = await app.inject({ url: '/api/admin/konoba-test/settings', headers: h });
-    expect(s.json()).toMatchObject({ max_party_size: 8, slug: 'konoba-test' });
+    expect(s.json()).toMatchObject({ max_party_size: 8, slug: 'konoba-test', review_mode: 'approval' });
   });
 
   it('super admin kreira novi restoran s vlastitim ključem', async () => {

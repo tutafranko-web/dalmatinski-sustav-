@@ -10,6 +10,7 @@ Projekt: Opsis Restoran — multi-tenant sustav za restorane (rezervacije, AI ch
 - Vrijeme: u bazi UTC (`timestamptz`), prema gostu lokalno preko `src/time.ts` (Europe/Zagreb).
 - Nikad ne spremaj brojeve kartica; samo Stripe tokene.
 - Fiskalizacija je isključena dok se ne testira na CIS demo okolini — ne uključuj je bez Frankove potvrde.
+- Upit za Google recenziju po defaultu traži odobrenje osoblja (review_mode = 'approval'); nikad ga ne šalji gostu koji nije bio (status seated/completed).
 - Ne mijenjaj tekstove poruka gostima bez provjere sva tri jezika (hr/en/de) u `src/services/messages.ts`.
 
 ## Sljedeći zadaci (po prioritetu)

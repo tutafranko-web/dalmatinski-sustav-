@@ -7,7 +7,7 @@ import type { Db } from './db.js';
 import type { Deps } from './deps.js';
 import { findAvailability, getRestaurantBySlug } from './services/availability.js';
 import {
-  cancelReservation, createReservation, getByCode, listForDay, modifyReservation, setStatus, verifyGuest, confirmGuarantee,
+  cancelReservation, createReservation, getByCode, listForDay, modifyReservation, setStatus, verifyGuest, confirmGuarantee, decideReview,
 } from './services/reservations.js';
 import { AppError, type Restaurant } from './services/types.js';
 import { utcToLocal } from './time.js';
@@ -195,6 +195,12 @@ export async function buildApp(db: Db, deps: Deps, opts: AppOptions = {}): Promi
     return setStatus(db, deps, r, Number(req.params.id), req.body?.status);
   });
 
+  // konobar: { "approve": true } = pošalji gostu upit za Google recenziju, false = ne šalji
+  app.post('/api/admin/:slug/reservations/:id/review', async (req: any) => {
+    const r = await admin(req);
+    return decideReview(db, r, Number(req.params.id), req.body?.approve === true);
+  });
+
   app.post('/api/admin/:slug/reservations/:code/cancel', async (req: any) => {
     const r = await admin(req);
     return cancelReservation(db, deps, r, req.params.code, null, { admin: true });
@@ -208,7 +214,7 @@ export async function buildApp(db: Db, deps: Deps, opts: AppOptions = {}): Promi
 
   const SETTINGS = ['name', 'phone', 'email', 'address', 'default_language', 'opening_hours', 'closed_dates', 'slot_minutes',
     'default_duration_minutes', 'max_party_size', 'guarantee_mode', 'guarantee_min_party', 'no_show_fee_cents',
-    'google_review_url', 'info_text'] as const;
+    'google_review_url', 'review_mode', 'info_text'] as const;
   const JSON_SETTINGS = new Set(['opening_hours', 'closed_dates']);
 
   app.get('/api/admin/:slug/settings', async (req: any) => {
@@ -229,6 +235,7 @@ export async function buildApp(db: Db, deps: Deps, opts: AppOptions = {}): Promi
     for (const k of SETTINGS) {
       if (!(k in b)) continue;
       if (k === 'guarantee_mode' && !['none', 'card'].includes(b[k])) throw new AppError(400, 'bad_value', 'guarantee_mode: none ili card');
+      if (k === 'review_mode' && !['approval', 'auto', 'off'].includes(b[k])) throw new AppError(400, 'bad_value', 'review_mode: approval, auto ili off');
       if (k === 'opening_hours' && (!Array.isArray(b[k]) || b[k].some((p: any) => !(p.weekday >= 1 && p.weekday <= 7) || !/^\d{2}:\d{2}$/.test(p.open) || !/^\d{2}:\d{2}$/.test(p.close))))
         throw new AppError(400, 'bad_value', 'Neispravno radno vrijeme');
       vals.push(JSON_SETTINGS.has(k) ? JSON.stringify(b[k]) : b[k]);

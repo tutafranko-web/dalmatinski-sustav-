@@ -124,6 +124,8 @@
       <p><label class="muted">Radno vrijeme — jedan red po periodu: dan(1=pon…7=ned) od do, npr. <code>1 12:00 23:00</code></label><textarea id="sHours" rows="8" style="width:100%"></textarea></p>
       <p><label class="muted">Zatvoreni datumi (jedan po redu, GGGG-MM-DD)</label><textarea id="sClosed" rows="3" style="width:100%"></textarea></p>
       <p><label class="muted">Link za Google recenziju</label><input id="sReview" style="width:100%"></p>
+      <p><label class="muted">Upit za recenziju gostima</label>
+        <select id="sReviewMode"><option value="approval">Konobar odobrava za svakog gosta</option><option value="auto">Šalji automatski svima koji su bili</option><option value="off">Ne šalji</option></select></p>
       <p><label class="muted">Informacije za AI asistenta (parking, ljubimci, dječja stolica, vegansko…)</label><textarea id="sInfo" rows="5" style="width:100%"></textarea></p>
       <p class="muted" id="sConn"></p>
       <button class="b p" id="sSave">Spremi postavke</button> <span id="sMsg" class="muted"></span>
@@ -141,6 +143,7 @@ const $ = (id) => document.getElementById(id);
 const esc = (x) => String(x ?? '').replace(/[&<>"']/g, (c) => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
 const eur = (c) => (c / 100).toFixed(2).replace('.', ',') + ' €';
 let S = JSON.parse(localStorage.getItem('opsis-admin') || 'null');
+let SET = null; // postavke restorana
 const STATUS = { pending_guarantee:'čeka karticu', confirmed:'potvrđeno', seated:'sjede', completed:'završeno', cancelled:'otkazano', no_show:'nije došao', expired:'isteklo' };
 const SOURCE = { web:'web', chat:'chat', whatsapp:'WhatsApp', instagram:'Instagram', voice:'telefon AI', admin:'osoblje' };
 const tz = 'Europe/Zagreb';
@@ -181,16 +184,29 @@ const loadRes = guard(async () => {
     <td><span class="tag s-${r.status}">${STATUS[r.status] || r.status}</span><div class="muted">${r.code}</div></td>
     <td>${esc(r.notes)}</td>
     <td>${['confirmed', 'pending_guarantee'].includes(r.status) ? `<button class="b" data-s="seated" data-id="${r.id}">Sjeli</button><button class="b" data-s="no_show" data-id="${r.id}">Nije došao</button><button class="b" data-c="${r.code}">Otkaži</button>` : ''}
-        ${r.status === 'seated' ? `<button class="b" data-s="completed" data-id="${r.id}">Završeno</button>` : ''}</td></tr>`).join('') || '<tr><td colspan="8" class="muted">Nema rezervacija.</td></tr>';
+        ${r.status === 'seated' ? `<button class="b" data-s="completed" data-id="${r.id}">Završeno</button>` : ''}
+        ${reviewCell(r)}</td></tr>`).join('') || '<tr><td colspan="8" class="muted">Nema rezervacija.</td></tr>';
   $('rList').querySelectorAll('[data-s]').forEach((b) => b.onclick = guard(async () => {
     if (b.dataset.s === 'no_show' && !confirm('Označiti kao nedolazak? Ako postoji garancija, naplatit će se.')) return;
     await api(`/reservations/${b.dataset.id}/status`, { method: 'POST', body: JSON.stringify({ status: b.dataset.s }) }); loadRes();
+  }));
+  $('rList').querySelectorAll('[data-rv]').forEach((b) => b.onclick = guard(async () => {
+    await api(`/reservations/${b.dataset.id}/review`, { method: 'POST', body: JSON.stringify({ approve: b.dataset.rv === '1' }) }); loadRes();
   }));
   $('rList').querySelectorAll('[data-c]').forEach((b) => b.onclick = guard(async () => {
     if (!confirm('Otkazati rezervaciju? Gost dobiva obavijest.')) return;
     await api(`/reservations/${b.dataset.c}/cancel`, { method: 'POST', body: '{}' }); loadRes();
   }));
 });
+// upit za Google recenziju: konobar odobrava (review_mode = approval)
+function reviewCell(r) {
+  if (!['seated', 'completed'].includes(r.status) || !SET || SET.review_mode === 'off' || !SET.google_review_url) return '';
+  if (r.review_request_sent_at) return '<div class="muted">⭐ upit za recenziju poslan</div>';
+  if (r.review_decision === 'declined') return `<div class="muted">bez recenzije <button class="b" data-rv="1" data-id="${r.id}">Ipak pošalji</button></div>`;
+  if (r.review_decision === 'approved') return `<div class="muted">⭐ odobreno, šalje se 2 h nakon posjeta <button class="b" data-rv="0" data-id="${r.id}">Poništi</button></div>`;
+  if (SET.review_mode === 'auto') return `<div class="muted">⭐ šalje se automatski <button class="b" data-rv="0" data-id="${r.id}">Ne šalji</button></div>`;
+  return `<div><button class="b p" data-rv="1" data-id="${r.id}">⭐ Traži recenziju</button><button class="b" data-rv="0" data-id="${r.id}">Ne</button></div>`;
+}
 const shiftDay = (n) => { const d = new Date($('rDate').value + 'T12:00:00Z'); d.setUTCDate(d.getUTCDate() + n); $('rDate').value = d.toISOString().slice(0, 10); loadRes(); };
 $('rPrev').onclick = () => shiftDay(-1); $('rNext').onclick = () => shiftDay(1); $('rToday').onclick = () => { $('rDate').value = todayStr(); loadRes(); };
 $('rDate').onchange = loadRes;
@@ -264,13 +280,13 @@ $('tSave').onclick = guard(async () => {
 
 // ---- postavke ----
 const loadSettings = guard(async () => {
-  const s = await api('/settings');
+  const s = await api('/settings'); SET = s;
   $('hName').textContent = s.name;
   $('sName').value = s.name; $('sPhone').value = s.phone || ''; $('sEmail').value = s.email || ''; $('sAddress').value = s.address || '';
   $('sSlot').value = s.slot_minutes; $('sDur').value = s.default_duration_minutes; $('sMax').value = s.max_party_size;
   $('sGuar').value = s.guarantee_mode; $('sGuarMin').value = s.guarantee_min_party; $('sFee').value = (s.no_show_fee_cents / 100).toFixed(2);
   $('sHours').value = s.opening_hours.map((p) => `${p.weekday} ${p.open} ${p.close}`).join('\n');
-  $('sClosed').value = s.closed_dates.join('\n'); $('sReview').value = s.google_review_url || ''; $('sInfo').value = s.info_text || '';
+  $('sClosed').value = s.closed_dates.join('\n'); $('sReview').value = s.google_review_url || ''; $('sReviewMode').value = s.review_mode; $('sInfo').value = s.info_text || '';
   $('sConn').textContent = `Stripe: ${s.stripe_connected ? 'spojen' : 'nije spojen'} · WhatsApp: ${s.whatsapp_connected ? 'spojen' : 'nije spojen'} · Fiskalizacija: ${s.fiscal_enabled ? 'uključena' : 'isključena'}`;
 });
 $('sSave').onclick = guard(async () => {
@@ -282,8 +298,8 @@ $('sSave').onclick = guard(async () => {
       slot_minutes: Number($('sSlot').value), default_duration_minutes: Number($('sDur').value), max_party_size: Number($('sMax').value),
       guarantee_mode: $('sGuar').value, guarantee_min_party: Number($('sGuarMin').value), no_show_fee_cents: Math.round(Number($('sFee').value) * 100),
       opening_hours: hours, closed_dates: $('sClosed').value.split('\n').map((s) => s.trim()).filter(Boolean),
-      google_review_url: $('sReview').value || null, info_text: $('sInfo').value }) });
-    $('sMsg').textContent = 'Spremljeno.';
+      google_review_url: $('sReview').value || null, review_mode: $('sReviewMode').value, info_text: $('sInfo').value }) });
+    $('sMsg').textContent = 'Spremljeno.'; loadSettings();
   } catch (e) { $('sMsg').textContent = e.message; }
 });
 
@@ -301,7 +317,7 @@ const loadStats = guard(async () => {
 function start() {
   $('login').classList.add('hidden'); $('app').classList.remove('hidden');
   $('rDate').value = todayStr(); $('nDate').value = todayStr();
-  loadSettings(); loadRes(); loadOrders();
+  loadSettings().then(loadRes); loadOrders();
   setInterval(() => S && loadOrders(), 10_000);
 }
 if (S) start(); else $('login').classList.remove('hidden');
