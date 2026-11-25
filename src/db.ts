@@ -12,9 +12,23 @@ export interface Db {
   exec?(sql: string): Promise<unknown>;
 }
 
+/**
+ * TLS prema bazi: lokalna baza bez TLS-a, svaka udaljena uvijek šifrirano.
+ * Supabase potpisuje certifikat vlastitim CA-om, pa se identitet servera provjerava samo ako je zadan caPem
+ * (Supabase → Database → SSL Configuration → Download certificate).
+ */
+export function pgSsl(connectionString: string, caPem?: string): { ca?: string; rejectUnauthorized: boolean } | undefined {
+  const url = new URL(connectionString);
+  if (['localhost', '127.0.0.1', '[::1]'].includes(url.hostname)) return undefined;
+  if (url.searchParams.has('sslmode')) return undefined; // izričito zadano u adresi
+  return caPem ? { ca: caPem, rejectUnauthorized: true } : { rejectUnauthorized: false };
+}
+
 /** Produkcija: Supabase / bilo koji Postgres preko DATABASE_URL. */
-export function createPgDb(connectionString: string): Db {
-  const pool = new pg.Pool({ connectionString, max: 10 });
+export function createPgDb(connectionString: string, caPem?: string): Db {
+  const pool = new pg.Pool({ connectionString, max: 10, ssl: pgSsl(connectionString, caPem), connectionTimeoutMillis: 10_000 });
+  // bez ovoga prekid veze prema bazi (npr. restart poolera) ruši cijeli proces
+  pool.on('error', (e) => console.error('[db] prekinuta veza u mirovanju:', e.message));
   const wrap = (client: pg.PoolClient): Db => ({
     query: (sql, params) => client.query(sql, params as any[]) as any,
     tx: (fn) => fn(wrap(client)), // već smo u transakciji
@@ -30,7 +44,7 @@ export function createPgDb(connectionString: string): Db {
         await client.query('commit');
         return res;
       } catch (e) {
-        await client.query('rollback');
+        await client.query('rollback').catch(() => {}); // ako je veza pala, bitna je izvorna greška
         throw e;
       } finally {
         client.release();

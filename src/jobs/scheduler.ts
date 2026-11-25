@@ -56,18 +56,17 @@ export async function tick(db: Db, deps: Deps) {
   return { expired, reminders: due.length, reviews: reviews.length, sent };
 }
 
+/** Pokreće pozadinske poslove. Vraća funkciju koja ih zaustavi i pričeka krug koji je u tijeku. */
 export function startScheduler(db: Db, deps: Deps, everyMs = 60_000) {
-  let running = false;
-  const h = setInterval(async () => {
-    if (running) return;
-    running = true;
-    try {
-      await tick(db, deps);
-    } catch (e) {
-      console.error('[scheduler]', e);
-    } finally {
-      running = false;
-    }
+  let current: Promise<void> | null = null;
+  const h = setInterval(() => {
+    if (current) return;
+    current = tick(db, deps)
+      .then(() => {}, (e) => console.error('[scheduler]', e))
+      .finally(() => { current = null; });
   }, everyMs);
-  return () => clearInterval(h);
+  return async () => {
+    clearInterval(h);
+    await current;
+  };
 }

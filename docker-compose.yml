@@ -1,18 +1,29 @@
 services:
   app:
     build: .
+    init: true
     restart: unless-stopped
     env_file: .env
     ports:
       - "127.0.0.1:3000:3000"   # izvana ide preko Caddyja (HTTPS)
+    logging: &logs
+      driver: json-file
+      options: { max-size: "10m", max-file: "5" }   # da logovi ne napune disk
   caddy:
     image: caddy:2
     restart: unless-stopped
+    depends_on:
+      app:
+        condition: service_healthy
     ports:
       - "80:80"
       - "443:443"
+      - "443:443/udp"
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
+      - caddy_config:/config
+    logging: *logs
 volumes:
   caddy_data:
+  caddy_config:

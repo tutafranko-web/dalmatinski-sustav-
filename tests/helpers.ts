@@ -58,7 +58,7 @@ export async function setup(opts: { now?: Date; llm?: LLM | null; guarantee?: bo
   const deps: Deps = {
     config: {
       publicBaseUrl: 'https://app.test', anthropicModel: 'test-model', voiceSharedSecret: 'voice-secret',
-      metaVerifyToken: 'verify-me', metaAppSecret: '', stripeWebhookSecret: '', superAdminKey: 'super',
+      metaVerifyToken: 'verify-me', metaAppSecret: 'app-secret', stripeWebhookSecret: '', superAdminKey: 'super',
     },
     payments,
     transport,

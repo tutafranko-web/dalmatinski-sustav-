@@ -77,7 +77,7 @@ export function realTransport(env: {
   smtpUrl?: string; mailFrom?: string; metaAccessToken?: string; graphVersion?: string;
 }): Transport {
   const mailer = env.smtpUrl ? nodemailer.createTransport(env.smtpUrl) : null;
-  const graph = `https://graph.facebook.com/${env.graphVersion ?? 'v21.0'}`;
+  const graph = `https://graph.facebook.com/${env.graphVersion ?? 'v26.0'}`;
   async function graphPost(path: string, body: unknown) {
     if (!env.metaAccessToken) throw new Error('META_ACCESS_TOKEN nije postavljen');
     const res = await fetch(`${graph}/${path}`, {

@@ -145,7 +145,6 @@ describe('WhatsApp i Instagram webhook', () => {
   it('verifikacija i odgovor na WhatsApp poruku (s provjerom potpisa)', async () => {
     const llm = scriptedLLM([text('Radimo svaki dan od 12 do 23.')]);
     const { db, deps, transport } = await setup({ llm });
-    deps.config.metaAppSecret = 'app-secret';
     const app = await buildApp(db, deps);
     const v = await app.inject({ url: '/webhooks/meta?hub.mode=subscribe&hub.verify_token=verify-me&hub.challenge=42' });
     expect(v.body).toBe('42');
@@ -168,9 +167,11 @@ describe('WhatsApp i Instagram webhook', () => {
     const { db, deps, r, transport } = await setup({ llm });
     await db.query(`update restaurants set instagram_account_id = 'ig-1' where id = $1`, [r.id]);
     const app = await buildApp(db, deps);
-    await app.inject({ method: 'POST', url: '/webhooks/meta', payload: {
+    const payload = JSON.stringify({
       object: 'instagram', entry: [{ id: 'ig-1', messaging: [{ sender: { id: 'u1' }, message: { text: 'bok', is_echo: true } }, { sender: { id: 'u2' }, message: { text: 'bok' } }] }],
-    } });
+    });
+    await app.inject({ method: 'POST', url: '/webhooks/meta', payload,
+      headers: { 'content-type': 'application/json', 'x-hub-signature-256': 'sha256=' + createHmac('sha256', 'app-secret').update(payload).digest('hex') } });
     await Promise.all([...app.pending]);
     expect(transport.sent).toEqual([{ channel: 'instagram', to: 'u2', body: 'Bok! Kako mogu pomoći?' }]);
   });

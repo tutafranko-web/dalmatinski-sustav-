@@ -2,6 +2,7 @@ import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypt
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from 'fastify';
+import fastifyCors from '@fastify/cors';
 import fastifyStatic from '@fastify/static';
 import type { Db } from './db.js';
 import type { Deps } from './deps.js';
@@ -51,7 +52,11 @@ function safeEqual(a: string, b: string) {
 }
 
 export async function buildApp(db: Db, deps: Deps, opts: AppOptions = {}): Promise<FastifyInstance & { pending: Set<Promise<unknown>> }> {
-  const app = Fastify({ logger: opts.logger ?? false, bodyLimit: 256 * 1024, trustProxy: true }) as any;
+  // u log ne idu parametri iz adrese: tamo su mobitel gosta (?contact=) i tajni ključ (?secret=)
+  const logger = opts.logger
+    ? { serializers: { req: (req: any) => ({ method: req.method, url: String(req.url).split('?')[0], ip: req.ip }) } }
+    : false;
+  const app = Fastify({ logger, bodyLimit: 256 * 1024, trustProxy: true }) as any;
   app.pending = new Set<Promise<unknown>>();
   const track = (p: Promise<unknown>) => {
     app.pending.add(p);
@@ -76,6 +81,10 @@ export async function buildApp(db: Db, deps: Deps, opts: AppOptions = {}): Promi
     return reply.status(500).send({ error: 'internal', message: 'Greška na serveru' });
   });
 
+  // chat.js radi na webu restorana (druga domena) i zove /api/r/…; panel, webhookovi i voice ostaju zatvoreni
+  await app.register(fastifyCors, {
+    delegator: (req: any, cb: any) => cb(null, { origin: String(req.url).startsWith('/api/r/'), methods: ['GET', 'POST'], maxAge: 86400 }),
+  });
   await app.register(fastifyStatic, { root: PUBLIC_DIR, prefix: '/static/' });
 
   const chatLimit = rateLimiter(20, 60_000);
@@ -83,7 +92,14 @@ export async function buildApp(db: Db, deps: Deps, opts: AppOptions = {}): Promi
   const orderLimit = rateLimiter(20, 60_000);
 
   // ---------- stranice ----------
-  app.get('/health', async () => ({ ok: true }));
+  app.get('/health', async (_req: any, reply: any) => {
+    try {
+      await db.query('select 1');
+      return { ok: true };
+    } catch {
+      return reply.status(503).send({ ok: false, error: 'db' });
+    }
+  });
   app.get('/b/:slug', (_req: any, reply: any) => reply.sendFile('book.html'));
   app.get('/m/:token', (_req: any, reply: any) => reply.sendFile('menu.html'));
   app.get('/admin', (_req: any, reply: any) => reply.sendFile('admin.html'));
@@ -445,16 +461,16 @@ export async function buildApp(db: Db, deps: Deps, opts: AppOptions = {}): Promi
   // ---------- Meta webhook (WhatsApp + Instagram) ----------
   app.get('/webhooks/meta', async (req: any, reply: any) => {
     const q = req.query ?? {};
-    if (q['hub.mode'] === 'subscribe' && q['hub.verify_token'] === deps.config.metaVerifyToken) return reply.type('text/plain').send(q['hub.challenge']);
+    if (q['hub.mode'] === 'subscribe' && deps.config.metaVerifyToken && q['hub.verify_token'] === deps.config.metaVerifyToken) return reply.type('text/plain').send(q['hub.challenge']);
     return reply.status(403).send('forbidden');
   });
 
   app.post('/webhooks/meta', async (req: any) => {
-    if (deps.config.metaAppSecret) {
-      const sig = String(req.headers['x-hub-signature-256'] ?? '');
-      const expected = 'sha256=' + createHmac('sha256', deps.config.metaAppSecret).update(req.rawBody ?? '').digest('hex');
-      if (!safeEqual(sig, expected)) throw new AppError(401, 'bad_signature', 'Neispravan potpis');
-    }
+    // bez potpisa nitko: broj pošiljatelja iz ove poruke služi kao dokaz identiteta gosta
+    if (!deps.config.metaAppSecret) throw new AppError(503, 'meta_disabled', 'WhatsApp/Instagram nije podešen (META_APP_SECRET)');
+    const sig = String(req.headers['x-hub-signature-256'] ?? '');
+    const expected = 'sha256=' + createHmac('sha256', deps.config.metaAppSecret).update(req.rawBody ?? '').digest('hex');
+    if (!safeEqual(sig, expected)) throw new AppError(401, 'bad_signature', 'Neispravan potpis');
     const body = req.body ?? {};
     // odgovaramo odmah (Meta inače ponavlja), poruke obrađujemo u pozadini
     track(handleMeta(body));

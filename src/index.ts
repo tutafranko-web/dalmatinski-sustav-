@@ -7,11 +7,22 @@ import { resendFailed } from './fiscal/invoices.js';
 import { purgeOldChats } from './ai/chatbot.js';
 import type { Deps } from './deps.js';
 import { seedDemo } from './demo.js';
+import { checkProductionEnv, pemFromEnv } from './config.js';
 
 const env = process.env;
 
 async function main() {
-  const db = env.DATABASE_URL ? createPgDb(env.DATABASE_URL) : await createMemDb();
+  if (env.NODE_ENV === 'production') {
+    const { errors, warnings } = checkProductionEnv(env);
+    for (const w of warnings) console.warn('⚠', w);
+    if (errors.length) {
+      for (const e of errors) console.error('✖', e);
+      console.error('Server se ne pokreće dok se .env ne popravi.');
+      process.exit(1);
+    }
+  }
+
+  const db = env.DATABASE_URL ? createPgDb(env.DATABASE_URL, pemFromEnv(env.DATABASE_CA_PEM)) : await createMemDb();
   if (!env.DATABASE_URL) console.warn('⚠ DATABASE_URL nije postavljen — koristi se baza u memoriji (podaci se gube kod restarta)');
   await migrate(db);
   if (!env.DATABASE_URL || env.SEED_DEMO === 'true') await seedDemo(db);
@@ -35,7 +46,7 @@ async function main() {
     now: () => new Date(),
   };
 
-  const cisSender = env.FISCAL_ENABLED === 'true' ? httpsCisSender(env.FISCAL_CA_PEM) : null;
+  const cisSender = env.FISCAL_ENABLED === 'true' ? httpsCisSender(pemFromEnv(env.FISCAL_CA_PEM)) : null;
   const app = await buildApp(db, deps, {
     logger: true,
     cisSender,
@@ -44,11 +55,28 @@ async function main() {
       : null,
   });
 
-  startScheduler(db, deps);
-  setInterval(() => purgeOldChats(db).catch(console.error), 6 * 3600_000);
-  if (cisSender) setInterval(() => resendFailed(db, { send: cisSender }).catch(console.error), 10 * 60_000);
+  const stopScheduler = startScheduler(db, deps);
+  const timers = [setInterval(() => purgeOldChats(db).catch(console.error), 6 * 3600_000)];
+  if (cisSender) timers.push(setInterval(() => resendFailed(db, { send: cisSender }).catch(console.error), 10 * 60_000));
 
   await app.listen({ port: Number(env.PORT ?? 3000), host: '0.0.0.0' });
+
+  // docker stop / nova verzija: dovrši zahtjeve i poruke koje su u tijeku, pa ugasi
+  let closing = false;
+  const shutdown = async (signal: string) => {
+    if (closing) return;
+    closing = true;
+    console.log(`${signal}: gasim server`);
+    setTimeout(() => process.exit(1), 9_000).unref(); // docker nakon 10 s ionako ubija proces
+    timers.forEach((t) => clearInterval(t));
+    await stopScheduler();
+    await app.close();
+    await Promise.allSettled([...app.pending]);
+    await db.close();
+    process.exit(0);
+  };
+  process.on('SIGTERM', () => void shutdown('SIGTERM'));
+  process.on('SIGINT', () => void shutdown('SIGINT'));
 }
 
 main().catch((e) => {
