@@ -40,12 +40,15 @@ export function createPgDb(connectionString: string): Db {
   };
 }
 
-/** Testovi i lokalni razvoj: pravi Postgres u memoriji (PGlite). */
-export async function createMemDb(): Promise<Db> {
+/**
+ * Testovi i lokalni razvoj: pravi Postgres u memoriji (PGlite).
+ * loadDataDir = snimka već migrirane baze (dump()): diže se oko 8 puta brže nego prazna baza.
+ */
+export async function createMemDb(loadDataDir?: Blob): Promise<Db & { dump(): Promise<Blob> }> {
   const { PGlite } = await import('@electric-sql/pglite');
-  const lite = new PGlite();
+  const lite = new PGlite(loadDataDir ? { loadDataDir } : {});
   let inTx = false;
-  const db: Db = {
+  const db: Db & { dump(): Promise<Blob> } = {
     query: (sql, params) => lite.query(sql, params as any[]) as any,
     async tx(fn) {
       if (inTx) return fn(db);
@@ -65,6 +68,7 @@ export async function createMemDb(): Promise<Db> {
     },
     close: () => lite.close(),
     exec: (sql) => lite.exec(sql),
+    dump: () => lite.dumpDataDir('none'),
   };
   return db;
 }

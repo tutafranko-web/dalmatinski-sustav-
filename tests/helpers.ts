@@ -1,3 +1,4 @@
+import { onTestFinished } from 'vitest';
 import { createMemDb, migrate, type Db } from '../src/db.js';
 import type { Deps, LLM, Payments, Transport } from '../src/deps.js';
 import type { Restaurant } from '../src/services/types.js';
@@ -34,9 +35,23 @@ export function fakePayments(): Payments & { charges: any[]; sessions: any[] } {
   };
 }
 
+/** Migrirana baza se napravi jednom po datoteci testova, a svaki test dobije svoju kopiju. */
+let template: Promise<Blob> | null = null;
+async function freshDb(): Promise<Db> {
+  template ??= (async () => {
+    const t = await createMemDb();
+    await migrate(t);
+    const dump = await t.dump();
+    await t.close();
+    return dump;
+  })();
+  const db = await createMemDb(await template);
+  onTestFinished(() => db.close()); // inače svaki test ostavi cijeli Postgres u memoriji
+  return db;
+}
+
 export async function setup(opts: { now?: Date; llm?: LLM | null; guarantee?: boolean } = {}) {
-  const db: Db = await createMemDb();
-  await migrate(db);
+  const db = await freshDb();
   let now = opts.now ?? new Date('2026-07-10T08:00:00Z'); // petak 10:00 u Zagrebu
   const transport = fakeTransport();
   const payments = fakePayments();
