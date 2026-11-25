@@ -18,9 +18,10 @@ export interface MessageData {
   guaranteeUrl?: string;
   reviewUrl?: string;
   noShowFee?: string; // npr. "20,00 €"
+  today?: boolean;    // termin je danas (podsjetnik: danas / sutra)
 }
 
-function fmtDate(date: string, l: Lang): string {
+export function fmtDate(date: string, l: Lang): string {
   const [y, m, d] = date.split('-');
   return l === 'en' ? `${d}/${m}/${y}` : `${Number(d)}.${Number(m)}.${y}.`;
 }
@@ -36,7 +37,7 @@ const T: Record<Lang, Record<MessageKind, (d: MessageData) => { subject: string;
       text: `Poštovani/a ${d.guestName},\n\nvaša rezervacija je izmijenjena: ${fmtDate(d.date, 'hr')} u ${d.time}, ${d.partySize} os.\nŠifra: ${d.code}`,
     }),
     reminder: (d) => ({
-      subject: `Podsjetnik: ${d.restaurantName} sutra u ${d.time}`,
+      subject: `Podsjetnik: ${d.restaurantName} ${d.today ? 'danas' : 'sutra'} u ${d.time}`,
       text: `Poštovani/a ${d.guestName},\n\npodsjećamo vas na rezervaciju u ${d.restaurantName}: ${fmtDate(d.date, 'hr')} u ${d.time}, ${d.partySize} os.\n${d.manageUrl ? `Ako ne možete doći, otkažite ovdje: ${d.manageUrl}` : ''}`,
     }),
     cancellation: (d) => ({
@@ -62,7 +63,7 @@ const T: Record<Lang, Record<MessageKind, (d: MessageData) => { subject: string;
       text: `Dear ${d.guestName},\n\nyour booking has been changed: ${fmtDate(d.date, 'en')} at ${d.time}, ${d.partySize} guests.\nCode: ${d.code}`,
     }),
     reminder: (d) => ({
-      subject: `Reminder: ${d.restaurantName} tomorrow at ${d.time}`,
+      subject: `Reminder: ${d.restaurantName} ${d.today ? 'today' : 'tomorrow'} at ${d.time}`,
       text: `Dear ${d.guestName},\n\na reminder of your booking at ${d.restaurantName}: ${fmtDate(d.date, 'en')} at ${d.time}, ${d.partySize} guests.\n${d.manageUrl ? `If you can't make it, please cancel here: ${d.manageUrl}` : ''}`,
     }),
     cancellation: (d) => ({
@@ -88,7 +89,7 @@ const T: Record<Lang, Record<MessageKind, (d: MessageData) => { subject: string;
       text: `Hallo ${d.guestName},\n\nIhre Reservierung wurde geändert: ${fmtDate(d.date, 'de')} um ${d.time} Uhr, ${d.partySize} Pers.\nCode: ${d.code}`,
     }),
     reminder: (d) => ({
-      subject: `Erinnerung: ${d.restaurantName} morgen um ${d.time} Uhr`,
+      subject: `Erinnerung: ${d.restaurantName} ${d.today ? 'heute' : 'morgen'} um ${d.time} Uhr`,
       text: `Hallo ${d.guestName},\n\nwir erinnern an Ihre Reservierung im ${d.restaurantName}: ${fmtDate(d.date, 'de')} um ${d.time} Uhr, ${d.partySize} Pers.\n${d.manageUrl ? `Falls Sie nicht kommen können, stornieren Sie bitte hier: ${d.manageUrl}` : ''}`,
     }),
     cancellation: (d) => ({

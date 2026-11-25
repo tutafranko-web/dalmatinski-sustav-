@@ -8,11 +8,12 @@ import type { Db } from './db.js';
 import type { Deps } from './deps.js';
 import { findAvailability, getRestaurantBySlug } from './services/availability.js';
 import {
-  cancelReservation, createReservation, getByCode, listForDay, modifyReservation, setStatus, verifyGuest, confirmGuarantee, decideReview, normalizePhone,
+  cancelReservation, createReservation, getByCode, listForDay, modifyReservation, setStatus, verifyGuest, confirmGuarantee, decideReview,
 } from './services/reservations.js';
+import { anonymizeGuest } from './services/guests.js';
 import { AppError, type Restaurant } from './services/types.js';
 import { utcToLocal } from './time.js';
-import { runChat } from './ai/chatbot.js';
+import { fallbackReply, runChat } from './ai/chatbot.js';
 import { executeTool } from './ai/tools.js';
 import { openOrders, placeOrder, publicMenu, setOrderStatus, tableByQr, upsertMenuItem } from './services/orders.js';
 import { issueInvoice } from './fiscal/invoices.js';
@@ -130,11 +131,11 @@ export async function buildApp(db: Db, deps: Deps, opts: AppOptions = {}): Promi
     const r = await getRestaurantBySlug(db, req.params.slug);
     const b = req.body ?? {};
     if (b.website) throw new AppError(400, 'spam', 'Odbijeno'); // honeypot polje
-    const { reservation, guaranteeUrl } = await createReservation(db, deps, r, {
+    const { reservation, guaranteeUrl, notified } = await createReservation(db, deps, r, {
       name: b.name, phone: b.phone, email: b.email, language: b.language, partySize: Number(b.partySize),
       date: b.date, time: b.time, zone: b.zone, notes: b.notes, source: 'web', marketingConsent: !!b.marketingConsent,
     });
-    return reply.status(201).send({ code: reservation.code, status: reservation.status, guaranteeUrl, ...utcToLocal(new Date(reservation.start_at), r.timezone) });
+    return reply.status(201).send({ code: reservation.code, status: reservation.status, guaranteeUrl, notified, ...utcToLocal(new Date(reservation.start_at), r.timezone) });
   });
 
   app.get('/api/r/:slug/reservations/:code', async (req: any) => {
@@ -411,23 +412,7 @@ export async function buildApp(db: Db, deps: Deps, opts: AppOptions = {}): Promi
   // ---------- GDPR: brisanje podataka gosta na zahtjev ----------
   app.post('/api/admin/:slug/guests/anonymize', async (req: any) => {
     const r = await admin(req, true);
-    const phone = normalizePhone(req.body?.phone);
-    const email = req.body?.email ? String(req.body.email).trim().toLowerCase() : null;
-    if (!phone && !email) throw new AppError(400, 'contact_required', 'Upiši mobitel ili email gosta');
-    const guests = (await db.query(
-      'select id, phone from guests where restaurant_id = $1 and ((phone is not null and phone = $2) or (email is not null and lower(email) = $3))',
-      [r.id, phone, email],
-    )).rows;
-    for (const g of guests) {
-      await db.query(
-        `update guests set name = 'Obrisani gost', phone = null, email = null, notes = '', stripe_customer_id = null, marketing_consent = false, anonymized_at = now() where id = $1`,
-        [g.id],
-      );
-      await db.query(`update reservations set notes = '' where guest_id = $1`, [g.id]);
-      await db.query(`delete from outbox where sent_at is null and restaurant_id = $1 and (recipient = $2 or lower(recipient) = $3)`, [r.id, g.phone, email]);
-      if (g.phone) await db.query(`delete from chat_sessions where restaurant_id = $1 and external_id = $2`, [r.id, g.phone]);
-    }
-    return { anonymized: guests.length };
+    return { anonymized: await anonymizeGuest(db, r, req.body ?? {}) };
   });
 
   // ---------- super admin: spajanje servisa za restoran ----------
@@ -477,6 +462,16 @@ export async function buildApp(db: Db, deps: Deps, opts: AppOptions = {}): Promi
     return { received: true };
   });
 
+  /** Na WhatsAppu i Instagramu gost ne vidi grešku servera, pa uvijek dobije barem broj telefona restorana. */
+  async function chatOrFallback(r: Restaurant, o: Parameters<typeof runChat>[3]): Promise<string> {
+    try {
+      return (await runChat(db, deps, r, o)).reply;
+    } catch (e) {
+      app.log.error(e);
+      return fallbackReply(r);
+    }
+  }
+
   async function handleMeta(body: any) {
     if (body.object === 'whatsapp_business_account') {
       for (const entry of body.entry ?? []) {
@@ -493,7 +488,7 @@ export async function buildApp(db: Db, deps: Deps, opts: AppOptions = {}): Promi
               : m.type === 'interactive' ? (m.interactive?.button_reply?.title ?? m.interactive?.list_reply?.title)
               : null;
             const reply = text
-              ? (await runChat(db, deps, r, { channel: 'whatsapp', externalId: from, text, callerPhone: from })).reply
+              ? (await chatOrFallback(r, { channel: 'whatsapp', externalId: from, text, callerPhone: from }))
               : 'Za sada razumijem samo tekstualne poruke. Napišite nam što trebate.';
             await deps.transport.sendWhatsApp({ phoneNumberId, to: from, body: { type: 'text', text: reply } });
           }
@@ -506,7 +501,7 @@ export async function buildApp(db: Db, deps: Deps, opts: AppOptions = {}): Promi
         for (const ev of entry.messaging ?? []) {
           if (ev.message?.is_echo || !ev.message?.text) continue;
           const sender = String(ev.sender?.id);
-          const { reply } = await runChat(db, deps, r, { channel: 'instagram', externalId: sender, text: ev.message.text });
+          const reply = await chatOrFallback(r, { channel: 'instagram', externalId: sender, text: ev.message.text });
           await deps.transport.sendInstagram({ igAccountId: r.instagram_account_id!, recipientId: sender, text: reply });
         }
       }

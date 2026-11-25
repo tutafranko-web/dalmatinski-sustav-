@@ -1,11 +1,32 @@
 import type { Db } from '../db.js';
-import type { Deps } from '../deps.js';
+import type { Deps, LLM } from '../deps.js';
 import { AppError, type Restaurant } from '../services/types.js';
 import { buildSystemPrompt, executeTool, TOOL_DEFINITIONS, type ToolContext } from './tools.js';
 
 const MAX_HISTORY = 40;       // poruka u povijesti
 const MAX_TOOL_ROUNDS = 6;    // zaštita od petlje
 const MAX_USER_CHARS = 2000;
+const MAX_TOKENS = 2000;
+
+/** Poruke istog razgovora idu jedna po jedna: gosti na WhatsAppu često pošalju nekoliko kratkih zaredom. */
+const queues = new Map<string, Promise<unknown>>();
+async function inOrder<T>(key: string, fn: () => Promise<T>): Promise<T> {
+  const prev = queues.get(key) ?? Promise.resolve();
+  const run = prev.then(fn, fn);
+  const settled = run.catch(() => {});
+  queues.set(key, settled);
+  try {
+    return await run;
+  } finally {
+    if (queues.get(key) === settled) queues.delete(key);
+  }
+}
+
+/** Odgovor kad AI ne može odgovoriti. Jezik gosta ovdje nije poznat, zato dvojezično. */
+export function fallbackReply(r: Restaurant): string {
+  const phone = r.phone ? `: ${r.phone}` : '';
+  return `Ispričavam se, nešto je pošlo krivo. Molimo nazovite restoran${phone}.\nSorry, something went wrong. Please call the restaurant${phone}.`;
+}
 
 /** Skraćuje povijest tako da uvijek počinje korisnikovom tekstualnom porukom (ne tool_resultom). */
 function trimHistory(messages: any[]): any[] {
@@ -30,7 +51,13 @@ export async function runChat(
   if (!deps.llm) throw new AppError(503, 'chat_disabled', 'Chatbot nije podešen (ANTHROPIC_API_KEY)');
   const text = opts.text.trim().slice(0, MAX_USER_CHARS);
   if (!text) throw new AppError(400, 'empty', 'Prazna poruka');
+  return inOrder(`${r.id}|${opts.channel}|${opts.externalId}`, () => chatTurn(db, deps, deps.llm!, r, { ...opts, text }));
+}
 
+async function chatTurn(
+  db: Db, deps: Deps, llm: LLM, r: Restaurant,
+  opts: { channel: ToolContext['source']; externalId: string; text: string; callerPhone?: string | null },
+): Promise<{ reply: string; toolCalls: string[] }> {
   let row = (
     await db.query('select id, messages, updated_at from chat_sessions where restaurant_id = $1 and channel = $2 and external_id = $3',
       [r.id, opts.channel, opts.externalId])
@@ -48,25 +75,30 @@ export async function runChat(
   // razgovor neaktivan dulje od 12 h kreće ispočetka
   const stale = deps.now().getTime() - new Date(row.updated_at).getTime() > 12 * 3600_000;
   let history: any[] = !stale && Array.isArray(row.messages) ? row.messages : [];
-  history = trimHistory([...history, { role: 'user', content: text }]);
+  history = trimHistory([...history, { role: 'user', content: opts.text }]);
 
   const ctx: ToolContext = { source: opts.channel, callerPhone: opts.callerPhone ?? null };
   const toolCalls: string[] = [];
   let reply = '';
+  // sprema se nakon svakog kruga: ako sljedeći poziv pukne, model i dalje zna da je rezervacija već napravljena
+  const save = () => db.query('update chat_sessions set messages = $2, updated_at = $3 where id = $1', [row.id, JSON.stringify(trimHistory(history)), deps.now()]);
   for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
-    const res = await deps.llm.create({
+    const res = await llm.create({
       model: deps.config.anthropicModel,
-      max_tokens: 800,
+      max_tokens: MAX_TOKENS,
       system: buildSystemPrompt(r, deps.now(), opts.channel),
       messages: history,
       tools: TOOL_DEFINITIONS as any,
     });
-    history.push({ role: 'assistant', content: res.content });
     const uses = res.content.filter((c: any) => c.type === 'tool_use');
     if (res.stop_reason !== 'tool_use' || uses.length === 0) {
-      reply = res.content.filter((c: any) => c.type === 'text').map((c: any) => c.text).join('\n').trim();
+      // odrezan (max_tokens) ili odbijen (refusal) odgovor: poziv alata bez rezultata i prazna poruka ne smiju u povijest
+      const text = res.content.filter((c: any) => c.type === 'text');
+      reply = text.map((c: any) => c.text).join('\n').trim();
+      if (reply) history.push({ role: 'assistant', content: uses.length ? text : res.content });
       break;
     }
+    history.push({ role: 'assistant', content: res.content });
     const results = [];
     for (const u of uses) {
       toolCalls.push(u.name);
@@ -74,10 +106,13 @@ export async function runChat(
       results.push({ type: 'tool_result', tool_use_id: u.id, content: JSON.stringify(out) });
     }
     history.push({ role: 'user', content: results });
+    await save();
   }
-  if (!reply) reply = 'Ispričavam se, nešto je pošlo krivo. Molimo nazovite restoran.';
-
-  await db.query('update chat_sessions set messages = $2, updated_at = $3 where id = $1', [row.id, JSON.stringify(trimHistory(history)), deps.now()]);
+  if (!reply) {
+    reply = fallbackReply(r);
+    history.push({ role: 'assistant', content: reply });
+  }
+  await save();
   return { reply, toolCalls };
 }
 

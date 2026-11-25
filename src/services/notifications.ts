@@ -1,18 +1,22 @@
 import type { Db } from '../db.js';
 import type { Deps } from '../deps.js';
-import { renderMessage, WHATSAPP_TEMPLATES, type MessageData, type MessageKind } from './messages.js';
+import { fmtDate, lang, renderMessage, WHATSAPP_TEMPLATES, type MessageData, type MessageKind } from './messages.js';
 import type { Restaurant } from './types.js';
 
 export interface GuestContact { name: string; phone: string | null; email: string | null; language: string }
+export type Channel = 'whatsapp' | 'email';
 
-/** Upisuje poruke u outbox (šalju se iz schedulera). Kanal: WhatsApp ako ga restoran ima i gost ima mobitel, plus email ako ga gost ima. */
+/**
+ * Upisuje poruke u outbox (šalju se iz schedulera). Kanal: WhatsApp ako ga restoran ima i gost ima mobitel, plus email ako ga gost ima.
+ * Vraća kanale na koje poruka ide; prazan niz = gostu se nema kamo poslati.
+ */
 export async function enqueueGuestMessage(
   db: Db, r: Restaurant,
   opts: { reservationId: number | null; guest: GuestContact; kind: MessageKind; data: MessageData; sendAfter?: Date },
-): Promise<number> {
+): Promise<Channel[]> {
   const { guest, kind, data } = opts;
   const sendAfter = opts.sendAfter ?? new Date(0);
-  let n = 0;
+  const channels: Channel[] = [];
   const msg = renderMessage(kind, guest.language, data);
   if (guest.phone && r.whatsapp_phone_number_id) {
     const url = data.guaranteeUrl ?? data.reviewUrl ?? data.manageUrl ?? '';
@@ -22,11 +26,11 @@ export async function enqueueGuestMessage(
       [r.id, opts.reservationId, guest.phone, kind, JSON.stringify({
         template: WHATSAPP_TEMPLATES[kind],
         language: guest.language,
-        params: [data.guestName, data.restaurantName, data.date, data.time, String(data.partySize), data.code, url],
+        params: [data.guestName, data.restaurantName, fmtDate(data.date, lang(guest.language)), data.time, String(data.partySize), data.code, url],
         fallbackText: msg.text,
       }), sendAfter],
     );
-    n++;
+    channels.push('whatsapp');
   }
   if (guest.email) {
     await db.query(
@@ -34,9 +38,9 @@ export async function enqueueGuestMessage(
        values ($1,$2,'email',$3,$4,$5,$6)`,
       [r.id, opts.reservationId, guest.email, kind, JSON.stringify(msg), sendAfter],
     );
-    n++;
+    channels.push('email');
   }
-  return n;
+  return channels;
 }
 
 /** Šalje dospjele poruke. Vraća broj poslanih. */

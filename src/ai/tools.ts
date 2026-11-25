@@ -52,8 +52,8 @@ export const TOOL_DEFINITIONS = [
   },
   {
     name: 'find_reservations',
-    description: 'Pronalazi buduće rezervacije gosta po broju mobitela.',
-    input_schema: { type: 'object', properties: { phone: { type: 'string' } }, required: [] },
+    description: 'Pronalazi buduće rezervacije po broju s kojeg gost zove ili piše na WhatsApp. Na web chatu i Instagramu ne radi jer broj nije potvrđen.',
+    input_schema: { type: 'object', properties: {}, required: [] },
   },
   {
     name: 'cancel_reservation',
@@ -108,6 +108,16 @@ async function restaurantInfo(db: Db, r: Restaurant) {
   };
 }
 
+/** Što bot smije reći gostu nakon rezervacije: ne tvrdi da je poruka poslana ako nije. */
+function createNote(o: { pending: boolean; sent: boolean; existing: boolean; hasUrl: boolean; voice: boolean }): string {
+  if (o.existing) return 'Ova rezervacija već postoji od ranije, nije napravljena druga. Reci gostu šifru.';
+  if (o.pending && o.sent) return 'Rezervacija čeka garanciju karticom. Link je poslan gostu porukom i vrijedi 30 minuta.';
+  if (o.pending) return o.hasUrl && !o.voice
+    ? 'Rezervacija čeka garanciju karticom i vrijedi 30 minuta. Poruka se nema kamo poslati: daj gostu link iz guarantee_url.'
+    : 'Rezervacija čeka garanciju karticom, ali se link nema kamo poslati. Reci gostu da odmah nazove osoblje, inače rezervacija istječe za 30 minuta.';
+  return o.sent ? 'Potvrda je poslana gostu porukom.' : 'Rezervacija je potvrđena, ali se potvrda nema kamo poslati. Reci gostu da zapiše šifru.';
+}
+
 export async function executeTool(
   db: Db, deps: Deps, r: Restaurant, name: string, input: any, ctx: ToolContext,
 ): Promise<Record<string, unknown>> {
@@ -131,26 +141,26 @@ export async function executeTool(
       }
 
       case 'create_reservation': {
-        const { reservation, guaranteeUrl } = await createReservation(db, deps, r, {
+        const { reservation, guaranteeUrl, notified, existing } = await createReservation(db, deps, r, {
           name: input.name, phone: input.phone || ctx.callerPhone || null, email: input.email || null,
           partySize: Number(input.party_size), date: input.date, time: input.time, zone: input.zone || null,
           notes: input.notes || null, language: input.language || null, source: ctx.source,
+          reuseExisting: true,
         });
         const local = utcToLocal(new Date(reservation.start_at), r.timezone);
         return {
           ok: true, code: reservation.code, status: reservation.status, date: local.date, time: local.time, party_size: reservation.party_size,
-          guarantee_required: !!guaranteeUrl,
+          guarantee_required: reservation.status === 'pending_guarantee',
           guarantee_url: guaranteeUrl,
-          note: guaranteeUrl
-            ? 'Rezervacija čeka garanciju karticom. Link je poslan gostu porukom i vrijedi 30 minuta.'
-            : 'Potvrda je poslana gostu porukom.',
+          notified,
+          note: createNote({ pending: reservation.status === 'pending_guarantee', sent: notified.length > 0, existing: !!existing, hasUrl: !!guaranteeUrl, voice: ctx.source === 'voice' }),
         };
       }
 
       case 'find_reservations': {
-        const phone = input.phone || ctx.callerPhone;
-        if (!phone) return { error: 'phone_required', message: 'Treba broj mobitela s kojim je rezervacija napravljena.' };
-        const list = await findUpcomingByPhone(db, r, phone, deps.now());
+        // samo potvrđen broj (WhatsApp, telefon): inače bi svatko upisom tuđeg broja vidio i otkazao tuđe rezervacije
+        if (!ctx.callerPhone) return { error: 'code_required', message: 'Rezervaciju mogu pronaći samo po šifri iz potvrde, uz mobitel ili email s kojim je napravljena. Ako gost nema šifru, neka nazove restoran.' };
+        const list = await findUpcomingByPhone(db, r, ctx.callerPhone, deps.now());
         return {
           reservations: list.map((x) => ({ code: x.code, ...utcToLocal(new Date(x.start_at), r.timezone), party_size: x.party_size, status: x.status })),
         };
@@ -198,7 +208,9 @@ export function buildSystemPrompt(r: Restaurant, now: Date, channel: ToolContext
     '- Ako termin nije slobodan, ponudi najbliže slobodne termine iz alata.',
     `- Za grupe veće od ${r.max_party_size} osoba, događaje ili pritužbe uputi gosta na telefon restorana ${r.phone ?? ''}.`,
     '- Za alergije: navedi alergene iz menija, ali reci da gost obavezno upozori konobara.',
-    '- Za otkaz ili izmjenu treba šifra rezervacije i mobitel/email s kojim je napravljena; ako gost nema šifru, potraži rezervacije po mobitelu.',
+    channel === 'whatsapp' || channel === 'voice'
+      ? '- Za otkaz ili izmjenu pozovi find_reservations: traži po broju s kojeg gost zove ili piše. Ako ništa ne nađe, treba šifra rezervacije i mobitel/email s kojim je napravljena.'
+      : '- Za otkaz ili izmjenu treba šifra rezervacije i mobitel/email s kojim je napravljena. Ako gost nema šifru, neka pogleda poruku potvrde ili nazove restoran.',
     '- Ne odgovaraj na pitanja koja nemaju veze s restoranom.',
     voice
       ? '- Ovo je telefonski poziv: govori kratko (1–2 rečenice), datume i vremena izgovaraj prirodno ("u subotu u pola osam"), šifru rezervacije sriči slovo po slovo. Broj s kojeg gost zove već imaš — pitaj samo želi li da potvrdu pošaljemo na taj broj.'

@@ -11,18 +11,21 @@ export async function tick(db: Db, deps: Deps) {
 
   // automatski završi stolove koji sjede, sat nakon planiranog kraja
   await db.query(
-    `update reservations set status = 'completed', updated_at = now() where status = 'seated' and end_at < $1`,
+    `with done as (
+       update reservations set status = 'completed', updated_at = now() where status = 'seated' and end_at < $1 returning guest_id
+     )
+     update guests set visits = visits + 1 where id in (select guest_id from done)`,
     [new Date(now.getTime() - 3600_000)],
   );
 
-  // podsjetnici: ~24 h prije, samo ako je rezervacija napravljena barem 6 h ranije
+  // podsjetnici: ~24 h prije, ali najranije 6 h nakon što je rezervacija napravljena (da ne stigne odmah uz potvrdu)
   const due = (
     await db.query<Reservation & { r: Restaurant }>(
       `select res.* from reservations res
         where res.status = 'confirmed' and res.reminder_sent_at is null
           and res.start_at <= $1 and res.start_at > $2
-          and res.start_at - res.created_at > interval '6 hours'`,
-      [new Date(now.getTime() + 24 * 3600_000), new Date(now.getTime() + 2 * 3600_000)],
+          and res.created_at <= $3`,
+      [new Date(now.getTime() + 24 * 3600_000), new Date(now.getTime() + 2 * 3600_000), new Date(now.getTime() - 6 * 3600_000)],
     )
   ).rows;
   for (const res of due) {

@@ -3,9 +3,9 @@ import type { Db } from '../db.js';
 import type { Deps } from '../deps.js';
 import { findAvailability, pickTable } from './availability.js';
 import { formatEur, lang, type MessageData, type MessageKind } from './messages.js';
-import { enqueueGuestMessage } from './notifications.js';
+import { enqueueGuestMessage, type Channel } from './notifications.js';
 import { AppError, type Reservation, type ReservationStatus, type Restaurant } from './types.js';
-import { isValidDate, isValidTime, utcToLocal } from '../time.js';
+import { isValidDate, isValidTime, localToUtc, utcToLocal } from '../time.js';
 
 const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // bez 0/O/1/I
 export function newCode(): string {
@@ -38,12 +38,17 @@ export interface CreateInput {
   marketingConsent?: boolean;
   /** admin smije preskočiti garanciju */
   skipGuarantee?: boolean;
+  /** bot (chat / telefon) smije ponoviti isti zahtjev: ista rezervacija se vrati umjesto da se napravi druga */
+  reuseExisting?: boolean;
 }
 
 export interface CreateResult {
   reservation: Reservation;
   guaranteeUrl: string | null;
-  alternatives?: { date: string; time: string }[];
+  /** kanali na koje je gostu poslana poruka; prazno = nema se kamo poslati */
+  notified: Channel[];
+  /** true = vraćena je već postojeća rezervacija (reuseExisting) */
+  existing?: boolean;
 }
 
 function manageUrl(deps: Deps, r: Restaurant, code: string) {
@@ -60,6 +65,7 @@ async function messageData(db: Db, deps: Deps, r: Restaurant, res: Reservation):
       partySize: res.party_size, code: res.code, manageUrl: manageUrl(deps, r, res.code),
       noShowFee: r.no_show_fee_cents ? formatEur(r.no_show_fee_cents) : undefined,
       reviewUrl: r.google_review_url ?? undefined,
+      today: local.date === utcToLocal(deps.now(), r.timezone).date,
     },
   };
 }
@@ -92,6 +98,18 @@ export async function createReservation(db: Db, deps: Deps, r: Restaurant, input
   const created = await db.tx(async (t) => {
     // zaključaj restoran da dvije rezervacije ne dobiju isti stol
     await t.query('select id from restaurants where id = $1 for update', [r.id]);
+    if (input.reuseExisting) {
+      // prije izbora stola: prvi pokušaj je možda zauzeo zadnji slobodan stol
+      const same = (
+        await t.query<Reservation>(
+          `select res.* from reservations res join guests g on g.id = res.guest_id
+            where res.restaurant_id = $1 and res.start_at = $2 and res.party_size = $3 and res.status in ('confirmed','pending_guarantee')
+              and (($4::text is not null and g.phone = $4) or ($5::text is not null and lower(g.email) = $5)) limit 1`,
+          [r.id, localToUtc(input.date, input.time, r.timezone), partySize, phone, email],
+        )
+      ).rows[0];
+      if (same) return { res: same, guest: null, existing: true };
+    }
     const pick = await pickTable(t, r, { date: input.date, time: input.time, partySize, zone: input.zone ?? undefined });
     if (pick.start.getTime() < deps.now().getTime()) throw new AppError(409, 'in_past', 'To vrijeme je već prošlo');
     if (!pick.withinHours) throw new AppError(409, 'closed', 'Restoran tada ne radi ili je to prekasno za dolazak');
@@ -135,7 +153,7 @@ export async function createReservation(db: Db, deps: Deps, r: Restaurant, input
         if (!String(e?.message).includes('reservations_code_key')) throw e;
       }
     }
-    return { res: res!, guest };
+    return { res: res!, guest, existing: false };
   });
 
   if (!created) {
@@ -146,6 +164,8 @@ export async function createReservation(db: Db, deps: Deps, r: Restaurant, input
 
   let { res } = created;
   let guaranteeUrl: string | null = null;
+  let notified: Channel[];
+  if (created.existing) return { reservation: res, guaranteeUrl, notified: [], existing: true };
   if (guarantee && deps.payments) {
     const session = await deps.payments.createGuaranteeSession({
       restaurant: r, reservationCode: res.code, guestEmail: created.guest.email, customerId: created.guest.stripe_customer_id,
@@ -154,11 +174,11 @@ export async function createReservation(db: Db, deps: Deps, r: Restaurant, input
     });
     res = (await db.query<Reservation>('update reservations set stripe_checkout_session_id = $2 where id = $1 returning *', [res.id, session.id])).rows[0];
     guaranteeUrl = session.url;
-    await notify(db, deps, r, res, 'guarantee_link', { guaranteeUrl });
+    notified = await notify(db, deps, r, res, 'guarantee_link', { guaranteeUrl });
   } else {
-    await notify(db, deps, r, res, 'confirmation');
+    notified = await notify(db, deps, r, res, 'confirmation');
   }
-  return { reservation: res, guaranteeUrl };
+  return { reservation: res, guaranteeUrl, notified };
 }
 
 export async function getByCode(db: Db, r: Restaurant, code: string): Promise<Reservation> {
@@ -191,11 +211,18 @@ export async function findUpcomingByPhone(db: Db, r: Restaurant, phoneRaw: strin
   ).rows;
 }
 
+/** Nakon početka termina gost više ne dira rezervaciju: inače bi naknadnim otkazom izbjegao naplatu nedolaska. */
+function assertNotStarted(deps: Deps, res: Reservation) {
+  if (new Date(res.start_at).getTime() <= deps.now().getTime())
+    throw new AppError(409, 'already_started', 'Termin je već počeo, nazovite restoran');
+}
+
 export async function cancelReservation(db: Db, deps: Deps, r: Restaurant, code: string, contact: string | null, opts: { admin?: boolean } = {}) {
   const res = await getByCode(db, r, code);
   if (!opts.admin) await verifyGuest(db, res, contact);
   if (!['confirmed', 'pending_guarantee'].includes(res.status))
     throw new AppError(409, 'not_cancellable', 'Ova rezervacija se više ne može otkazati');
+  if (!opts.admin) assertNotStarted(deps, res);
   const updated = (
     await db.query<Reservation>(`update reservations set status = 'cancelled', updated_at = now() where id = $1 returning *`, [res.id])
   ).rows[0];
@@ -211,6 +238,7 @@ export async function modifyReservation(
   if (!opts.admin) await verifyGuest(db, res, contact);
   if (!['confirmed', 'pending_guarantee'].includes(res.status))
     throw new AppError(409, 'not_modifiable', 'Ova rezervacija se više ne može mijenjati');
+  if (!opts.admin) assertNotStarted(deps, res);
   const cur = utcToLocal(new Date(res.start_at), r.timezone);
   const date = change.date ?? cur.date;
   const time = change.time ?? cur.time;
@@ -220,13 +248,16 @@ export async function modifyReservation(
   const updated = await db.tx(async (t) => {
     await t.query('select id from restaurants where id = $1 for update', [r.id]);
     const pick = await pickTable(t, r, { date, time, partySize, excludeReservationId: res.id });
+    if (pick.start.getTime() < deps.now().getTime()) throw new AppError(409, 'in_past', 'To vrijeme je već prošlo');
+    // tko mijenja termin na manje od 24 h, zna za njega: podsjetnik odmah uz obavijest o izmjeni bio bi višak
+    const reminderSent = pick.start.getTime() - deps.now().getTime() <= 24 * 3600_000 ? deps.now() : null;
     if (!pick.withinHours) throw new AppError(409, 'closed', 'Restoran tada ne radi');
     if (!pick.table) throw new AppError(409, 'no_table', 'Nema slobodnog stola u to vrijeme');
     return (
       await t.query<Reservation>(
-        `update reservations set start_at = $2, end_at = $3, party_size = $4, table_id = $5, reminder_sent_at = null, updated_at = now()
+        `update reservations set start_at = $2, end_at = $3, party_size = $4, table_id = $5, reminder_sent_at = $6, updated_at = now()
           where id = $1 returning *`,
-        [res.id, pick.start, pick.end, partySize, pick.table.id],
+        [res.id, pick.start, pick.end, partySize, pick.table.id, reminderSent],
       )
     ).rows[0];
   });
@@ -294,7 +325,6 @@ export async function setStatus(db: Db, deps: Deps, r: Restaurant, id: number, s
 
 export async function listForDay(db: Db, r: Restaurant, date: string) {
   if (!isValidDate(date)) throw new AppError(400, 'bad_date', 'Neispravan datum');
-  const { localToUtc } = await import('../time.js');
   const from = localToUtc(date, '00:00', r.timezone);
   const to = new Date(from.getTime() + 30 * 3600_000);
   return (

@@ -50,7 +50,7 @@ Za **svaku** funkciju:
 | `get_restaurant_info` | `{}` |
 | `check_availability` | `date` (GGGG-MM-DD), `party_size` (integer), `preferred_time` (HH:MM, opcionalno), `zone` (opcionalno) |
 | `create_reservation` | `name`, `party_size`, `date`, `time`, `phone` (opc.), `notes` (opc.), `language` (hr/en/de) |
-| `find_reservations` | `phone` (opcionalno — inače broj pozivatelja) |
+| `find_reservations` | `{}` (uvijek broj pozivatelja, da nitko ne može pitati za tuđe rezervacije) |
 | `cancel_reservation` | `code`, `phone_or_email` (opcionalno) |
 | `modify_reservation` | `code`, `date`, `time`, `party_size` (sve opcionalno osim code) |
 
