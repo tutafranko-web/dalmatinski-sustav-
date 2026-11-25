@@ -27,6 +27,7 @@
   .langs { float:right; } .langs button { border:0; background:none; color:var(--muted); cursor:pointer; font: 13px system-ui; }
   .langs button.on { color: var(--ink); font-weight: 600; }
   .code { font: 700 26px ui-monospace, monospace; letter-spacing: 3px; }
+  a.pay { display:block; text-align:center; text-decoration:none; margin-top:10px; padding:12px; border-radius:8px; background:var(--accent); color:#fff; font:600 16px system-ui; }
   .hidden { display:none; }
 </style>
 </head>
@@ -62,7 +63,7 @@
   </section>
 
   <section id="done" class="hidden card">
-    <div class="msg ok" data-t="confirmed"></div>
+    <div class="msg ok" id="doneMsg" data-t="confirmed"></div>
     <p data-t="yourCode"></p>
     <div class="code" id="doneCode"></div>
     <p class="muted" id="doneWhen"></p>
@@ -83,9 +84,11 @@
 </main>
 <script>
 const I18N = {
-  hr: { date:'Datum', guests:'Broj osoba', zone:'Gdje želite sjediti', any:'Svejedno', time:'Vrijeme', name:'Ime i prezime', phone:'Mobitel (za potvrdu na WhatsApp)', email:'Email', notes:'Napomena (alergije, prigoda…)', book:'Rezerviraj', confirmed:'Rezervacija je potvrđena. Potvrdu smo vam poslali porukom.', yourCode:'Vaša šifra rezervacije:', reservation:'Rezervacija', contactCheck:'Za pregled upišite mobitel ili email s rezervacije', show:'Prikaži', cancel:'Otkaži rezervaciju', cancelled:'Rezervacija je otkazana.', noSlots:'Nema slobodnih termina za taj dan. Probajte drugi datum ili nas nazovite.', pick:'Odaberite vrijeme', privacy:'Podatke koristimo samo za vašu rezervaciju.', needContact:'Upišite mobitel ili email.', closedDay:'Taj dan ne radimo.', guarantee:'Za {n}+ osoba tražimo karticu kao garanciju; nedolazak se naplaćuje {fee} po osobi.', redirect:'Preusmjeravamo vas na unos kartice…', guaranteeOk:'Kartica je spremljena, rezervacija potvrđena.', persons:'os.' },
-  en: { date:'Date', guests:'Guests', zone:'Seating', any:'No preference', time:'Time', name:'Full name', phone:'Mobile (for WhatsApp confirmation)', email:'Email', notes:'Notes (allergies, occasion…)', book:'Book table', confirmed:'Your table is confirmed. We have sent you a confirmation.', yourCode:'Your booking code:', reservation:'Booking', contactCheck:'Enter the mobile or email used for the booking', show:'Show', cancel:'Cancel booking', cancelled:'Your booking has been cancelled.', noSlots:'No tables available that day. Try another date or call us.', pick:'Choose a time', privacy:'We use your data only for this booking.', needContact:'Please enter a mobile number or email.', closedDay:'We are closed that day.', guarantee:'For {n}+ guests we ask for a card guarantee; a no-show fee of {fee} per person applies.', redirect:'Redirecting you to enter your card…', guaranteeOk:'Card saved, booking confirmed.', persons:'guests' },
-  de: { date:'Datum', guests:'Personen', zone:'Sitzplatz', any:'Egal', time:'Uhrzeit', name:'Vor- und Nachname', phone:'Handy (für WhatsApp-Bestätigung)', email:'E-Mail', notes:'Hinweise (Allergien, Anlass…)', book:'Reservieren', confirmed:'Ihre Reservierung ist bestätigt. Wir haben Ihnen eine Bestätigung geschickt.', yourCode:'Ihr Reservierungscode:', reservation:'Reservierung', contactCheck:'Handy oder E-Mail der Reservierung eingeben', show:'Anzeigen', cancel:'Reservierung stornieren', cancelled:'Ihre Reservierung wurde storniert.', noSlots:'An diesem Tag ist nichts frei. Bitte anderes Datum wählen oder anrufen.', pick:'Uhrzeit wählen', privacy:'Wir verwenden Ihre Daten nur für diese Reservierung.', needContact:'Bitte Handy oder E-Mail angeben.', closedDay:'An diesem Tag geschlossen.', guarantee:'Ab {n} Personen benötigen wir eine Kreditkarte als Garantie; bei Nichterscheinen {fee} pro Person.', redirect:'Weiterleitung zur Karteneingabe…', guaranteeOk:'Karte gespeichert, Reservierung bestätigt.', persons:'Pers.' },
+  hr: { date:'Datum', guests:'Broj osoba', zone:'Gdje želite sjediti', any:'Svejedno', time:'Vrijeme', name:'Ime i prezime', phone:'Mobitel (za potvrdu na WhatsApp)', email:'Email', notes:'Napomena (alergije, prigoda…)', book:'Rezerviraj', confirmed:'Rezervacija je potvrđena. Potvrdu smo vam poslali porukom.', yourCode:'Vaša šifra rezervacije:', reservation:'Rezervacija', contactCheck:'Za pregled upišite mobitel ili email s rezervacije', show:'Prikaži', cancel:'Otkaži rezervaciju', cancelled:'Rezervacija je otkazana.', noSlots:'Nema slobodnih termina za taj dan. Probajte drugi datum ili nas nazovite.', pick:'Odaberite vrijeme', privacy:'Podatke koristimo samo za vašu rezervaciju.', needContact:'Upišite mobitel ili email.', closedDay:'Taj dan ne radimo.', guarantee:'Za {n}+ osoba tražimo karticu kao garanciju; nedolazak se naplaćuje {fee} po osobi.', redirect:'Preusmjeravamo vas na unos kartice…', guaranteeOk:'Kartica je spremljena, rezervacija potvrđena.', persons:'os.', noMsg:'Rezervacija je potvrđena. Zapišite šifru: poruku s potvrdom ne možemo poslati.', payLink:'Unesite karticu', status:{ pending_guarantee:'čeka karticu', confirmed:'potvrđeno', seated:'u tijeku', completed:'završeno', cancelled:'otkazano', no_show:'nedolazak', expired:'isteklo' }, err:{} },
+  en: { date:'Date', guests:'Guests', zone:'Seating', any:'No preference', time:'Time', name:'Full name', phone:'Mobile (for WhatsApp confirmation)', email:'Email', notes:'Notes (allergies, occasion…)', book:'Book table', confirmed:'Your table is confirmed. We have sent you a confirmation.', yourCode:'Your booking code:', reservation:'Booking', contactCheck:'Enter the mobile or email used for the booking', show:'Show', cancel:'Cancel booking', cancelled:'Your booking has been cancelled.', noSlots:'No tables available that day. Try another date or call us.', pick:'Choose a time', privacy:'We use your data only for this booking.', needContact:'Please enter a mobile number or email.', closedDay:'We are closed that day.', guarantee:'For {n}+ guests we ask for a card guarantee; a no-show fee of {fee} per person applies.', redirect:'Redirecting you to enter your card…', guaranteeOk:'Card saved, booking confirmed.', persons:'guests', noMsg:'Your table is confirmed. Please note the code: we cannot send you a confirmation message.', payLink:'Enter card details', status:{ pending_guarantee:'waiting for card', confirmed:'confirmed', seated:'in progress', completed:'completed', cancelled:'cancelled', no_show:'no-show', expired:'expired' },
+    err:{ name_required:'Please enter your name.', bad_phone:'This phone number is not valid.', bad_email:'This email address is not valid.', contact_required:'Please enter the mobile number or email used for the booking.', bad_datetime:'Invalid date or time.', bad_party:'Please choose the number of guests.', party_too_large:'This group is too large to book online. Please call the restaurant.', in_past:'That time has already passed.', closed:'The restaurant is closed at that time, or it is too late to arrive.', no_table:'No table is available at that time.', reservation_not_found:'Booking not found.', contact_mismatch:'The contact does not match the booking.', not_cancellable:'This booking can no longer be cancelled.', already_started:'The booking time has already started. Please call the restaurant.', rate_limited:'Too many requests. Please try again in a minute.', restaurant_not_found:'Restaurant not found.', internal:'Something went wrong. Please try again or call the restaurant.' } },
+  de: { date:'Datum', guests:'Personen', zone:'Sitzplatz', any:'Egal', time:'Uhrzeit', name:'Vor- und Nachname', phone:'Handy (für WhatsApp-Bestätigung)', email:'E-Mail', notes:'Hinweise (Allergien, Anlass…)', book:'Reservieren', confirmed:'Ihre Reservierung ist bestätigt. Wir haben Ihnen eine Bestätigung geschickt.', yourCode:'Ihr Reservierungscode:', reservation:'Reservierung', contactCheck:'Handy oder E-Mail der Reservierung eingeben', show:'Anzeigen', cancel:'Reservierung stornieren', cancelled:'Ihre Reservierung wurde storniert.', noSlots:'An diesem Tag ist nichts frei. Bitte anderes Datum wählen oder anrufen.', pick:'Uhrzeit wählen', privacy:'Wir verwenden Ihre Daten nur für diese Reservierung.', needContact:'Bitte Handy oder E-Mail angeben.', closedDay:'An diesem Tag geschlossen.', guarantee:'Ab {n} Personen benötigen wir eine Kreditkarte als Garantie; bei Nichterscheinen {fee} pro Person.', redirect:'Weiterleitung zur Karteneingabe…', guaranteeOk:'Karte gespeichert, Reservierung bestätigt.', persons:'Pers.', noMsg:'Ihre Reservierung ist bestätigt. Bitte notieren Sie den Code: Wir können Ihnen keine Bestätigung schicken.', payLink:'Karte eingeben', status:{ pending_guarantee:'wartet auf Karte', confirmed:'bestätigt', seated:'läuft', completed:'abgeschlossen', cancelled:'storniert', no_show:'nicht erschienen', expired:'abgelaufen' },
+    err:{ name_required:'Bitte geben Sie Ihren Namen ein.', bad_phone:'Diese Telefonnummer ist ungültig.', bad_email:'Diese E-Mail-Adresse ist ungültig.', contact_required:'Bitte geben Sie die Handynummer oder E-Mail der Reservierung ein.', bad_datetime:'Ungültiges Datum oder ungültige Uhrzeit.', bad_party:'Bitte wählen Sie die Personenzahl.', party_too_large:'Diese Gruppe ist für die Online-Reservierung zu groß. Bitte rufen Sie das Restaurant an.', in_past:'Diese Uhrzeit ist bereits vorbei.', closed:'Das Restaurant ist zu dieser Zeit geschlossen oder es ist zu spät für die Ankunft.', no_table:'Zu dieser Zeit ist kein Tisch frei.', reservation_not_found:'Reservierung nicht gefunden.', contact_mismatch:'Der Kontakt passt nicht zur Reservierung.', not_cancellable:'Diese Reservierung kann nicht mehr storniert werden.', already_started:'Die Reservierungszeit hat bereits begonnen. Bitte rufen Sie das Restaurant an.', rate_limited:'Zu viele Anfragen. Bitte versuchen Sie es in einer Minute erneut.', restaurant_not_found:'Restaurant nicht gefunden.', internal:'Etwas ist schiefgelaufen. Bitte versuchen Sie es erneut oder rufen Sie das Restaurant an.' } },
 };
 const slug = location.pathname.split('/').filter(Boolean)[1];
 const q = new URLSearchParams(location.search);
@@ -100,11 +103,14 @@ function applyLang() {
   if (R) renderGuarantee();
 }
 document.querySelectorAll('.langs button').forEach((b) => b.onclick = () => { L = b.dataset.l; applyLang(); fillZones(); });
+// server javlja greške na hrvatskom; gostu na njegovom jeziku po šifri greške
+const errText = (e) => (I18N[L].err && I18N[L].err[e.error]) || e.message;
+const fmtDay = (d) => { const [y, m, day] = d.split('-'); return L === 'en' ? `${day}/${m}/${y}` : `${Number(day)}.${Number(m)}.${y}.`; };
 function msg(el, text, ok) { $(el).innerHTML = text ? `<div class="msg ${ok ? 'ok' : 'err'}">${text.replace(/</g,'&lt;')}</div>` : ''; }
 async function api(path, opts = {}) {
   const res = await fetch(path, { ...opts, headers: { 'Content-Type': 'application/json' } });
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw Object.assign(new Error(data.message || 'Greška'), data);
+  if (!res.ok) throw Object.assign(new Error(data.message || t('noSlots')), data);
   return data;
 }
 function fillZones() {
@@ -127,7 +133,7 @@ async function loadSlots() {
       b.onclick = () => { chosen = s; document.querySelectorAll('.slot').forEach((x) => x.classList.remove('sel')); b.classList.add('sel'); $('details').classList.remove('hidden'); };
       $('slots').appendChild(b);
     }
-  } catch (e) { $('slotsInfo').textContent = e.message; }
+  } catch (e) { $('slotsInfo').textContent = errText(e); }
 }
 async function submit() {
   msg('bookMsg', '');
@@ -139,15 +145,25 @@ async function submit() {
       name: $('name').value, phone: $('phone').value, email: $('email').value, notes: $('notes').value, website: $('website').value,
       partySize: Number($('party').value), date: chosen.date, time: chosen.time, zone: $('zone').value || undefined, language: L,
     }) });
-    if (d.guaranteeUrl) { msg('bookMsg', t('redirect'), true); location.href = d.guaranteeUrl; return; }
+    if (d.guaranteeUrl) return openCheckout(d.guaranteeUrl);
     $('book').classList.add('hidden'); $('done').classList.remove('hidden');
-    $('doneCode').textContent = d.code; $('doneWhen').textContent = `${d.date} · ${d.time} · ${$('party').value} ${t('persons')}`;
+    if (!d.notified.length) { $('doneMsg').dataset.t = 'noMsg'; $('doneMsg').textContent = t('noMsg'); }
+    $('doneCode').textContent = d.code; $('doneWhen').textContent = `${fmtDay(d.date)} · ${d.time} · ${$('party').value} ${t('persons')}`;
     parent.postMessage({ type: 'opsis:booked', code: d.code }, '*');
   } catch (e) {
-    let text = e.message;
+    let text = errText(e);
     if (e.alternatives && e.alternatives.length) text += ' → ' + e.alternatives.slice(0, 6).map((a) => a.time).join(', ');
     msg('bookMsg', text);
   } finally { $('submit').disabled = false; }
+}
+// Stripe se ne otvara unutar okvira (widget na webu restorana): tada vodimo cijelu stranicu, a ako preglednik to blokira, ostaje gumb
+function openCheckout(url) {
+  msg('bookMsg', t('redirect'), true);
+  const a = document.createElement('a');
+  a.href = url; a.target = '_top'; a.className = 'primary pay'; a.textContent = t('payLink');
+  $('bookMsg').appendChild(a);
+  if (window.top === window) { location.href = url; return; }
+  try { window.top.location.href = url; } catch {}
 }
 async function manage(code) {
   $('book').classList.add('hidden'); $('manage').classList.remove('hidden'); $('mCode').textContent = code;
@@ -156,19 +172,20 @@ async function manage(code) {
     try {
       const d = await api(`/api/r/${slug}/reservations/${code}?contact=${encodeURIComponent($('mContact').value)}`);
       $('mAsk').classList.add('hidden'); $('mInfo').classList.remove('hidden');
-      $('mWhen').textContent = `${d.date} · ${d.time} · ${d.party_size} ${t('persons')} · ${d.status}`;
+      $('mWhen').textContent = `${fmtDay(d.date)} · ${d.time} · ${d.party_size} ${t('persons')} · ${t('status')[d.status] || d.status}`;
+      msg('mMsg', '');
       $('mCancel').classList.toggle('hidden', !['confirmed', 'pending_guarantee'].includes(d.status));
-    } catch (e) { msg('mMsg', e.message); }
+    } catch (e) { msg('mMsg', errText(e)); }
   };
   $('mCancel').onclick = async () => {
     try { await api(`/api/r/${slug}/reservations/${code}/cancel`, { method: 'POST', body: JSON.stringify({ contact: $('mContact').value }) });
       $('mInfo').classList.add('hidden'); msg('mMsg', t('cancelled'), true);
-    } catch (e) { msg('mMsg', e.message); }
+    } catch (e) { msg('mMsg', errText(e)); }
   };
 }
 (async function init() {
   applyLang();
-  try { R = await api(`/api/r/${slug}`); } catch (e) { document.querySelector('main').textContent = e.message; return; }
+  try { R = await api(`/api/r/${slug}`); } catch (e) { document.querySelector('main').textContent = errText(e); return; }
   document.title = R.name; $('rname').textContent = R.name; $('raddr').textContent = [R.address, R.phone].filter(Boolean).join(' · ');
   $('party').innerHTML = Array.from({ length: R.max_party_size }, (_, i) => `<option ${i === 1 ? 'selected' : ''}>${i + 1}</option>`).join('');
   const today = new Date(); today.setMinutes(today.getMinutes() - today.getTimezoneOffset());

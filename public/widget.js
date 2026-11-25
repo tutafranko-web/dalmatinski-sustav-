@@ -1,5 +1,6 @@
 /* Opsis Restoran — gumb za rezervaciju na webu restorana.
-   Ugradnja: <script src="https://TVOJA-DOMENA/widget.js" data-restaurant="konoba-test" data-label="Rezerviraj stol" async></script> */
+   Ugradnja: <script src="https://TVOJA-DOMENA/widget.js" data-restaurant="konoba-test" data-label="Rezerviraj stol" async></script>
+   Stoji lijevo dolje jer je desno AI chat; bez chata može i data-side="right". */
 (function () {
   var s = document.currentScript;
   if (!s) return;
@@ -7,9 +8,10 @@
   var base = s.src.replace(/\/widget\.js.*$/, '');
   var label = s.getAttribute('data-label') || 'Rezerviraj stol';
   var color = s.getAttribute('data-color') || '#0f5c8c';
+  var side = s.getAttribute('data-side') === 'right' ? 'right' : 'left';
   var btn = document.createElement('button');
   btn.textContent = label;
-  btn.style.cssText = 'position:fixed;right:20px;bottom:20px;z-index:2147483000;padding:12px 18px;border:0;border-radius:999px;background:' + color + ';color:#fff;font:600 15px system-ui;box-shadow:0 4px 14px rgba(0,0,0,.2);cursor:pointer';
+  btn.style.cssText = 'position:fixed;' + side + ':20px;bottom:20px;z-index:2147483000;padding:12px 18px;border:0;border-radius:999px;background:' + color + ';color:#fff;font:600 15px system-ui;box-shadow:0 4px 14px rgba(0,0,0,.2);cursor:pointer';
   var overlay = document.createElement('div');
   overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:2147483001;display:none;align-items:center;justify-content:center';
   var frame = document.createElement('iframe');
