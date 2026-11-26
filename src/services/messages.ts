@@ -1,4 +1,5 @@
 // Tekstovi poruka gostima na HR / EN / DE.
+import { toGsm7 } from './sms.js';
 
 export type Lang = 'hr' | 'en' | 'de';
 export function lang(l?: string | null): Lang {
@@ -19,6 +20,7 @@ export interface MessageData {
   reviewUrl?: string;
   noShowFee?: string; // npr. "20,00 €"
   today?: boolean;    // termin je danas (podsjetnik: danas / sutra)
+  shortGuaranteeUrl?: string; // kratki link na Stripe (za SMS)
 }
 
 export function fmtDate(date: string, l: Lang): string {
@@ -106,6 +108,41 @@ const T: Record<Lang, Record<MessageKind, (d: MessageData) => { subject: string;
     }),
   },
 };
+
+/**
+ * Kratki tekstovi za SMS (bez imena gosta, da stane u 1–2 poruke). Šalju se u GSM-7, pa č/ć/š/ž/đ postaju c/c/s/z/dj.
+ * Mijenjaš li ih, provjeri sva tri jezika i test "SMS stane u dvije poruke".
+ */
+const SMS: Record<Lang, Record<MessageKind, (d: MessageData) => string>> = {
+  hr: {
+    confirmation: (d) => `${d.restaurantName}: rezervacija potvrđena ${fmtDate(d.date, 'hr')} u ${d.time}, ${d.partySize} os. Šifra ${d.code}. Izmjena ili otkaz: ${d.manageUrl}`,
+    modified: (d) => `${d.restaurantName}: rezervacija izmijenjena na ${fmtDate(d.date, 'hr')} u ${d.time}, ${d.partySize} os. Šifra ${d.code}. ${d.manageUrl}`,
+    reminder: (d) => `${d.restaurantName}: podsjetnik na rezervaciju ${d.today ? 'danas' : 'sutra'} u ${d.time}, ${d.partySize} os. Ako ne dolazite, otkažite: ${d.manageUrl}`,
+    cancellation: (d) => `${d.restaurantName}: rezervacija ${d.code} za ${fmtDate(d.date, 'hr')} u ${d.time} je otkazana.`,
+    guarantee_link: (d) => `${d.restaurantName}: za potvrdu rezervacije ${fmtDate(d.date, 'hr')} u ${d.time} ostavite karticu kao garanciju: ${d.shortGuaranteeUrl ?? d.guaranteeUrl} Link vrijedi 30 min.${d.noShowFee ? ` Nedolazak se naplaćuje ${d.noShowFee} po osobi.` : ''}`,
+    review_request: (d) => `Hvala na posjetu, ${d.restaurantName}! Ako vam se svidjelo, ostavite nam recenziju: ${d.reviewUrl}`,
+  },
+  en: {
+    confirmation: (d) => `${d.restaurantName}: booking confirmed ${fmtDate(d.date, 'en')} at ${d.time}, ${d.partySize} guests. Code ${d.code}. Change or cancel: ${d.manageUrl}`,
+    modified: (d) => `${d.restaurantName}: booking changed to ${fmtDate(d.date, 'en')} at ${d.time}, ${d.partySize} guests. Code ${d.code}. ${d.manageUrl}`,
+    reminder: (d) => `${d.restaurantName}: reminder of your booking ${d.today ? 'today' : 'tomorrow'} at ${d.time}, ${d.partySize} guests. Can't make it? Cancel here: ${d.manageUrl}`,
+    cancellation: (d) => `${d.restaurantName}: booking ${d.code} for ${fmtDate(d.date, 'en')} at ${d.time} has been cancelled.`,
+    guarantee_link: (d) => `${d.restaurantName}: to confirm your booking ${fmtDate(d.date, 'en')} at ${d.time}, leave a card as a guarantee: ${d.shortGuaranteeUrl ?? d.guaranteeUrl} Valid 30 min.${d.noShowFee ? ` No-show fee ${d.noShowFee} per person.` : ''}`,
+    review_request: (d) => `Thank you for visiting ${d.restaurantName}! If you enjoyed it, please leave us a review: ${d.reviewUrl}`,
+  },
+  de: {
+    confirmation: (d) => `${d.restaurantName}: Reservierung bestätigt ${fmtDate(d.date, 'de')} um ${d.time} Uhr, ${d.partySize} Pers. Code ${d.code}. Ändern oder stornieren: ${d.manageUrl}`,
+    modified: (d) => `${d.restaurantName}: Reservierung geändert auf ${fmtDate(d.date, 'de')} um ${d.time} Uhr, ${d.partySize} Pers. Code ${d.code}. ${d.manageUrl}`,
+    reminder: (d) => `${d.restaurantName}: Erinnerung an Ihre Reservierung ${d.today ? 'heute' : 'morgen'} um ${d.time} Uhr, ${d.partySize} Pers. Falls Sie nicht kommen, bitte stornieren: ${d.manageUrl}`,
+    cancellation: (d) => `${d.restaurantName}: Reservierung ${d.code} für ${fmtDate(d.date, 'de')} um ${d.time} Uhr wurde storniert.`,
+    guarantee_link: (d) => `${d.restaurantName}: Bitte hinterlegen Sie zur Bestätigung (${fmtDate(d.date, 'de')} um ${d.time} Uhr) eine Karte als Garantie: ${d.shortGuaranteeUrl ?? d.guaranteeUrl} 30 Min. gültig.${d.noShowFee ? ` Bei Nichterscheinen ${d.noShowFee} pro Person.` : ''}`,
+    review_request: (d) => `Danke für Ihren Besuch im ${d.restaurantName}! Wenn es Ihnen gefallen hat, freuen wir uns über eine Bewertung: ${d.reviewUrl}`,
+  },
+};
+
+export function renderSms(kind: MessageKind, l: string | null | undefined, d: MessageData): string {
+  return toGsm7(SMS[lang(l)][kind](d));
+}
 
 export function renderMessage(kind: MessageKind, l: string | null | undefined, d: MessageData) {
   return T[lang(l)][kind](d);

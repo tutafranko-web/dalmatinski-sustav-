@@ -22,6 +22,9 @@ export interface Restaurant {
   review_mode: 'approval' | 'auto' | 'off';
   whatsapp_phone_number_id: string | null;
   instagram_account_id: string | null;
+  sms_mode: 'off' | 'fallback';
+  sms_sender: string | null;
+  sms_daily_limit: number;
   admin_api_key: string;
   info_text: string;
   fiscal_config: Record<string, any>;

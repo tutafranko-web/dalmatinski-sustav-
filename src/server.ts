@@ -8,9 +8,10 @@ import type { Db } from './db.js';
 import type { Deps } from './deps.js';
 import { findAvailability, getRestaurantBySlug } from './services/availability.js';
 import {
-  cancelReservation, createReservation, getByCode, listForDay, modifyReservation, setStatus, verifyGuest, confirmGuarantee, decideReview,
+  cancelReservation, createReservation, getByCode, listForDay, modifyReservation, setStatus, verifyGuest, confirmGuarantee, decideReview, guaranteeRedirect,
 } from './services/reservations.js';
 import { anonymizeGuest } from './services/guests.js';
+import { onWhatsAppStatus } from './services/notifications.js';
 import { AppError, type Restaurant } from './services/types.js';
 import { utcToLocal } from './time.js';
 import { fallbackReply, runChat } from './ai/chatbot.js';
@@ -103,6 +104,13 @@ export async function buildApp(db: Db, deps: Deps, opts: AppOptions = {}): Promi
   });
   app.get('/b/:slug', (_req: any, reply: any) => reply.sendFile('book.html'));
   app.get('/m/:token', (_req: any, reply: any) => reply.sendFile('menu.html'));
+  // kratki link iz SMS-a za garanciju karticom
+  app.get('/g/:code', async (req: any, reply: any) => {
+    bookLimit(req.ip);
+    const url = await guaranteeRedirect(db, deps, String(req.params.code));
+    if (!url) throw new AppError(404, 'reservation_not_found', 'Rezervacija nije pronađena');
+    return reply.redirect(url, 302);
+  });
   app.get('/admin', (_req: any, reply: any) => reply.sendFile('admin.html'));
   app.get('/widget.js', (_req: any, reply: any) => reply.type('application/javascript').sendFile('widget.js'));
   app.get('/chat.js', (_req: any, reply: any) => reply.type('application/javascript').sendFile('chat.js'));
@@ -253,6 +261,7 @@ export async function buildApp(db: Db, deps: Deps, opts: AppOptions = {}): Promi
     out.slug = r.slug;
     out.stripe_connected = !!r.stripe_account_id;
     out.whatsapp_connected = !!r.whatsapp_phone_number_id;
+    out.sms_enabled = r.sms_mode === 'fallback' && !!deps.transport.sendSms;
     out.fiscal_enabled = !!(r.fiscal_config as any)?.enabled;
     out.role = req.role;
     return out;
@@ -421,11 +430,15 @@ export async function buildApp(db: Db, deps: Deps, opts: AppOptions = {}): Promi
     if (!deps.config.superAdminKey || !safeEqual(key, deps.config.superAdminKey)) throw new AppError(401, 'unauthorized', 'Neispravan ključ');
     const r = await getRestaurantBySlug(db, req.params.slug);
     const b = req.body ?? {};
-    const fields = ['whatsapp_phone_number_id', 'instagram_account_id', 'stripe_account_id', 'fiscal_config'] as const;
+    const fields = ['whatsapp_phone_number_id', 'instagram_account_id', 'stripe_account_id', 'fiscal_config', 'sms_mode', 'sms_sender', 'sms_daily_limit'] as const;
     const sets: string[] = [], vals: unknown[] = [r.id];
     for (const f of fields) {
       if (!(f in b)) continue;
       if (f === 'stripe_account_id' && b[f] !== null && !/^acct_[A-Za-z0-9]+$/.test(b[f])) throw new AppError(400, 'bad_value', 'stripe_account_id mora počinjati s acct_');
+      if (f === 'sms_mode' && !['off', 'fallback'].includes(b[f])) throw new AppError(400, 'bad_value', 'sms_mode: off ili fallback');
+      if (f === 'sms_sender' && b[f] !== null && b[f] !== '' && !/^(?=.*[A-Za-z])[A-Za-z0-9]{3,11}$/.test(b[f]))
+        throw new AppError(400, 'bad_value', 'sms_sender: 3 do 11 slova i brojki, bez razmaka');
+      if (f === 'sms_daily_limit' && !(Number.isInteger(b[f]) && b[f] >= 0 && b[f] <= 10_000)) throw new AppError(400, 'bad_value', 'sms_daily_limit: cijeli broj 0–10000');
       vals.push(f === 'fiscal_config' ? JSON.stringify(b[f] ?? {}) : b[f] === '' ? null : b[f]);
       sets.push(`${f} = $${vals.length}`);
     }
@@ -478,11 +491,14 @@ export async function buildApp(db: Db, deps: Deps, opts: AppOptions = {}): Promi
         for (const ch of entry.changes ?? []) {
           const v = ch.value ?? {};
           const phoneNumberId = v.metadata?.phone_number_id;
-          if (!phoneNumberId || !v.messages) continue;
+          if (!phoneNumberId || !(v.messages || v.statuses)) continue;
           const r = (await db.query<Restaurant>('select * from restaurants where whatsapp_phone_number_id = $1', [phoneNumberId])).rows[0];
           if (!r) continue;
-          for (const m of v.messages) {
+          // dostava naših poruka: neuspjela ide SMS-om
+          for (const st of v.statuses ?? []) await onWhatsAppStatus(db, deps, r, st);
+          for (const m of v.messages ?? []) {
             const from = '+' + String(m.from);
+            await db.query('update guests set whatsapp_ok = true where restaurant_id = $1 and phone = $2', [r.id, from]);
             const text = m.type === 'text' ? m.text?.body
               : m.type === 'button' ? m.button?.text
               : m.type === 'interactive' ? (m.interactive?.button_reply?.title ?? m.interactive?.list_reply?.title)

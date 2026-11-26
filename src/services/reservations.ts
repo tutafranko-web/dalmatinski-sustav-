@@ -66,13 +66,14 @@ async function messageData(db: Db, deps: Deps, r: Restaurant, res: Reservation):
       noShowFee: r.no_show_fee_cents ? formatEur(r.no_show_fee_cents) : undefined,
       reviewUrl: r.google_review_url ?? undefined,
       today: local.date === utcToLocal(deps.now(), r.timezone).date,
+      shortGuaranteeUrl: `${deps.config.publicBaseUrl}/g/${res.code}`,
     },
   };
 }
 
 export async function notify(db: Db, deps: Deps, r: Restaurant, res: Reservation, kind: MessageKind, extra: Partial<MessageData> = {}, sendAfter?: Date) {
   const { data, guest } = await messageData(db, deps, r, res);
-  return enqueueGuestMessage(db, r, { reservationId: res.id, guest, kind, data: { ...data, ...extra }, sendAfter });
+  return enqueueGuestMessage(db, r, { reservationId: res.id, guest, kind, data: { ...data, ...extra }, sendAfter, sms: !!deps.transport.sendSms });
 }
 
 function needsGuarantee(r: Restaurant, deps: Deps, partySize: number) {
@@ -172,13 +173,27 @@ export async function createReservation(db: Db, deps: Deps, r: Restaurant, input
       successUrl: `${deps.config.publicBaseUrl}/b/${r.slug}?code=${res.code}&guarantee=ok`,
       cancelUrl: `${deps.config.publicBaseUrl}/b/${r.slug}?code=${res.code}&guarantee=cancel`,
     });
-    res = (await db.query<Reservation>('update reservations set stripe_checkout_session_id = $2 where id = $1 returning *', [res.id, session.id])).rows[0];
+    res = (await db.query<Reservation>(
+      'update reservations set stripe_checkout_session_id = $2, guarantee_url = $3 where id = $1 returning *', [res.id, session.id, session.url],
+    )).rows[0];
     guaranteeUrl = session.url;
     notified = await notify(db, deps, r, res, 'guarantee_link', { guaranteeUrl });
   } else {
     notified = await notify(db, deps, r, res, 'confirmation');
   }
   return { reservation: res, guaranteeUrl, notified };
+}
+
+/** Kratki link iz SMS-a (/g/ŠIFRA): vodi na Stripe dok garancija čeka, inače na pregled rezervacije. */
+export async function guaranteeRedirect(db: Db, deps: Deps, code: string): Promise<string | null> {
+  const res = (await db.query<Reservation & { slug: string; guarantee_url: string | null }>(
+    `select res.*, r.slug from reservations res join restaurants r on r.id = res.restaurant_id where res.code = $1`,
+    [code.trim().toUpperCase()],
+  )).rows[0];
+  if (!res) return null;
+  const open = res.status === 'pending_guarantee' && res.guarantee_url && res.guarantee_expires_at
+    && new Date(res.guarantee_expires_at).getTime() > deps.now().getTime();
+  return open ? res.guarantee_url! : `${deps.config.publicBaseUrl}/b/${res.slug}?code=${res.code}`;
 }
 
 export async function getByCode(db: Db, r: Restaurant, code: string): Promise<Reservation> {

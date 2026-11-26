@@ -37,10 +37,14 @@ async function main() {
       metaAppSecret: env.META_APP_SECRET ?? '',
       stripeWebhookSecret: env.STRIPE_WEBHOOK_SECRET ?? '',
       superAdminKey: env.SUPER_ADMIN_KEY ?? '',
+      smsSenderOverride: env.SMS_SENDER || undefined,
     },
     payments: env.STRIPE_SECRET_KEY ? stripePayments(env.STRIPE_SECRET_KEY) : null,
-    transport: env.SMTP_URL || env.META_ACCESS_TOKEN
-      ? realTransport({ smtpUrl: env.SMTP_URL, mailFrom: env.MAIL_FROM, metaAccessToken: env.META_ACCESS_TOKEN, graphVersion: env.META_GRAPH_VERSION })
+    transport: env.SMTP_URL || env.META_ACCESS_TOKEN || env.INFOBIP_API_KEY
+      ? realTransport({
+          smtpUrl: env.SMTP_URL, mailFrom: env.MAIL_FROM, metaAccessToken: env.META_ACCESS_TOKEN, graphVersion: env.META_GRAPH_VERSION,
+          infobipApiKey: env.INFOBIP_API_KEY, infobipBaseUrl: env.INFOBIP_BASE_URL,
+        })
       : consoleTransport(),
     llm: env.ANTHROPIC_API_KEY ? anthropicLLM(env.ANTHROPIC_API_KEY) : null,
     now: () => new Date(),

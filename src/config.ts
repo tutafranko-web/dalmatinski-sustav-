@@ -20,6 +20,8 @@ export function checkProductionEnv(env: Env): ConfigReport {
   if (!env.SMTP_URL && !env.META_ACCESS_TOKEN) warnings.push('Nema ni SMTP-a ni WhatsAppa: gosti neće dobivati potvrde.');
   if (!env.ANTHROPIC_API_KEY) warnings.push('ANTHROPIC_API_KEY nije postavljen: chatbot je isključen.');
   if (!env.VOICE_SHARED_SECRET && !env.RETELL_API_KEY) warnings.push('Nema VOICE_SHARED_SECRET ni RETELL_API_KEY: voice agent je isključen.');
+  if (!env.INFOBIP_API_KEY) warnings.push('INFOBIP_API_KEY nije postavljen: SMS je isključen.');
+  if (env.INFOBIP_API_KEY && !/^https:\/\//.test(env.INFOBIP_BASE_URL ?? 'https://')) errors.push('INFOBIP_BASE_URL mora biti https adresa (Infobip → API keys).');
   if (!env.STRIPE_SECRET_KEY) warnings.push('STRIPE_SECRET_KEY nije postavljen: garancija karticom je isključena.');
   if (env.SEED_DEMO === 'true') warnings.push('SEED_DEMO=true: demo restoran ima javno poznat ključ (demo-key).');
   if (env.FISCAL_ENABLED === 'true') warnings.push('FISCAL_ENABLED=true: fiskalizacija je uključena na serveru.');

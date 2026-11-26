@@ -6,6 +6,8 @@ Meta App → Webhooks:
 - Callback URL: `https://TVOJA-DOMENA/webhooks/meta`
 - Verify token: vrijednost `META_VERIFY_TOKEN`
 - Pretplati se na `messages` (WhatsApp Business Account) i `messages` (Instagram).
+  Kroz isto polje stižu i statusi dostave naših poruka. Kad WhatsApp poruka ne prođe, sustav šalje SMS (vidi [sms-infobip.md](sms-infobip.md)).
+- Bez `META_APP_SECRET` server ne prima nijednu poruku: broj pošiljatelja služi kao dokaz identiteta gosta, pa potpis mora biti provjeren.
 - `META_APP_SECRET` = App secret (server provjerava potpis `x-hub-signature-256`).
 
 ## Spajanje restorana
@@ -14,7 +16,7 @@ U tablici `restaurants` upiši:
 - `whatsapp_phone_number_id` — Phone number ID iz WhatsApp Managera (ne sam broj!)
 - `instagram_account_id` — ID Instagram poslovnog računa
 
-(Za sada SQL-om u Supabaseu; panel to još nema.)
+Upisuje se kroz `PUT /api/super/restaurants/SLUG/integrations` (primjer u [sms-infobip.md](sms-infobip.md), isti zahtjev s poljima `whatsapp_phone_number_id` i `instagram_account_id`).
 
 ## Predlošci poruka (moraju biti odobreni)
 

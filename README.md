@@ -12,6 +12,8 @@ Jedan server služi više restorana (svaki ima svoj `slug` i ključ za panel).
 | Stranica za rezervaciju `/b/SLUG` (HR/EN/DE) + gumb za web restorana (`widget.js`) | ✅ testirano u pregledniku |
 | Pregled i otkaz rezervacije za gosta (šifra + mobitel/email) | ✅ |
 | Potvrde, izmjene, otkazi, podsjetnik 24 h prije (WhatsApp predlošci + email) | ✅ testirano s lažnim slanjem |
+| SMS (Infobip) kad WhatsApp nije moguć ili ne prođe; zaštita od troška (zemlje, limiti) | ✅ testirano s lažnim slanjem, [upute](docs/sms-infobip.md) |
+| Ponovni pokušaj slanja s razmakom (1, 5, 15, 60 min) | ✅ testirano |
 | Upit za Google recenziju: konobar u panelu odobri gosta (⭐ Traži recenziju / Ne), poruka ide 2 h nakon posjeta; u postavkama može i automatski ili isključeno | ✅ testirano |
 | Garancija karticom (Stripe Connect, setup mode), istek nakon 30 min, naplata no-showa | ✅ testirano s lažnim Stripeom |
 | AI chatbot (Claude + alati) na webu (`chat.js`), WhatsAppu i Instagramu | ✅ testirano s lažnim modelom |
@@ -20,7 +22,8 @@ Jedan server služi više restorana (svaki ima svoj `slug` i ključ za panel).
 | Ključevi za osoblje: vlasnik vs konobar (konobar ne mijenja meni/stolove/postavke), opoziv ključa | ✅ testirano |
 | GDPR: brisanje podataka gosta na zahtjev | ✅ testirano |
 | Stripe Connect: vlasnik u panelu klikne "Spoji Stripe" i prođe onboarding | ✅ testirano s lažnim Stripeom |
-| Spajanje WhatsApp/Instagram/Stripe ID-jeva za restoran (`PUT /api/super/restaurants/SLUG/integrations`) | ✅ testirano |
+| Spajanje WhatsApp/Instagram/Stripe ID-jeva i SMS-a za restoran (`PUT /api/super/restaurants/SLUG/integrations`) | ✅ testirano |
+| Produkcijski način: pravi Postgres 17, TLS prema bazi, RLS, provjera `.env` pri startu, uredno gašenje | ✅ provjereno lokalno na Postgresu 17 (Docker nije probran) |
 | Panel za restoran `/admin`: rezervacije, narudžbe (zvuk), meni, stolovi + QR linkovi, postavke, statistika | ✅ testirano u pregledniku |
 | QR meni po stolu `/m/TOKEN`: narudžba, poziv konobara, račun, 14 EU alergena | ✅ testirano u pregledniku |
 | Fiskalizacija (ZKI, potpis, CIS, naknadna dostava) | ⚠️ testirano lokalno, **nije** testirano na CIS demo okolini |
@@ -37,9 +40,11 @@ npm start            # bez DATABASE_URL koristi bazu u memoriji + demo restoran
 - Rezervacija: http://localhost:3000/b/demo-konoba
 - Panel: http://localhost:3000/admin (oznaka `demo-konoba`, ključ `demo-key`)
 - QR meni: http://localhost:3000/m/demo-qr-3
-- Testovi: `npm test` (44 testa) · provjera tipova: `npm run typecheck`
+- Testovi: `npm test` (79 testova) · provjera tipova: `npm run typecheck`
 
 ## Produkcija (Hostinger VPS + Supabase)
+
+Detaljno, korak po korak: [docs/deploy-hostinger.md](docs/deploy-hostinger.md).
 
 1. Supabase → novi projekt (regija EU) → kopiraj connection string u `DATABASE_URL`.
 2. Na VPS-u: `git clone`, `cp .env.example .env`, popuni varijable.
@@ -86,6 +91,9 @@ tests/                   vitest (pravi Postgres u memoriji — PGlite)
 
 ## Poznata ograničenja (sljedeći koraci)
 
-- Nema SMS-a (samo WhatsApp + email).
-- Rate limit je u memoriji jednog procesa — za više instanci treba Redis.
-- Fiskalizacija nije testirana na CIS demo okolini.
+- Rate limit i redoslijed poruka u chatu drže se u memoriji jednog procesa — za više instanci treba Redis.
+- Fiskalizacija nije testirana na CIS demo okolini (odluka 26. 11. 2026.: zasad restorani zadržavaju svoju blagajnu).
+- Nema roka za besplatan otkaz: gost može otkazati sve do početka termina. Rok (npr. 24 h) je poslovna odluka po restoranu.
+- Gost može izmjenom povećati broj osoba iznad praga za garanciju bez da ostavi karticu.
+- Dostava SMS-a se ne prati u sustavu (vidi se u Infobip portalu).
+- Greške na QR meniju su samo na hrvatskom.

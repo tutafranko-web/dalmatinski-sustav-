@@ -9,6 +9,7 @@ export interface Config {
   metaAppSecret: string;            // za provjeru potpisa webhooka
   stripeWebhookSecret: string;
   superAdminKey: string;            // za tebe: kreiranje restorana
+  smsSenderOverride?: string;       // SMS_SENDER: isti pošiljatelj za sve restorane (Infobip proba: ServiceSMS)
 }
 
 export interface Payments {
@@ -28,8 +29,18 @@ export interface Payments {
 
 export interface Transport {
   sendEmail(input: { to: string; subject: string; text: string; replyTo?: string | null }): Promise<void>;
-  sendWhatsApp(input: { phoneNumberId: string; to: string; body: WhatsAppBody }): Promise<void>;
+  /** Vraća ID poruke (wamid) za praćenje dostave. */
+  sendWhatsApp(input: { phoneNumberId: string; to: string; body: WhatsAppBody }): Promise<string | null>;
   sendInstagram(input: { igAccountId: string; recipientId: string; text: string }): Promise<void>;
+  /** Nema ga ako SMS nije podešen na serveru. Vraća ID poruke kod dobavljača. */
+  sendSms?(input: { to: string; from: string; text: string }): Promise<string | null>;
+}
+
+/** Greška slanja. permanent = ponovni pokušaj ne pomaže (broj nije na WhatsAppu, predložak ne postoji...). */
+export class SendError extends Error {
+  constructor(message: string, public permanent: boolean, public code?: string) {
+    super(message);
+  }
 }
 
 export type WhatsAppBody =

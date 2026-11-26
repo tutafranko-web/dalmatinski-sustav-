@@ -135,6 +135,8 @@ describe('scheduler', () => {
     await tick(db, deps);
     expect(transport.sent.map((s) => s.channel)).toEqual(['whatsapp', 'email']);
     expect(transport.sent[0].body).toMatchObject({ type: 'template', name: 'opsis_potvrda' });
+    // {{7}} u potvrdi je "Izmjena ili otkaz", a ne link za recenziju; datum kako ga gost čita
+    expect(transport.sent[0].body.params.slice(2)).toEqual(['12.7.2026.', '19:00', '2', reservation.code, `https://app.test/b/konoba-test?code=${reservation.code}`]);
 
     setNow(new Date('2026-07-11T18:00:00Z')); // dan prije
     let res = await tick(db, deps);

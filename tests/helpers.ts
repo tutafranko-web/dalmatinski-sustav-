@@ -5,14 +5,22 @@ import type { Restaurant } from '../src/services/types.js';
 
 export interface Sent { channel: string; to: string; body: any }
 
-export function fakeTransport(): Transport & { sent: Sent[] } {
+export function fakeTransport(): Transport & { sent: Sent[]; failWhatsApp: ((to: string) => Error | null) | null } {
   const sent: Sent[] = [];
-  return {
+  const t: Transport & { sent: Sent[]; failWhatsApp: ((to: string) => Error | null) | null } = {
     sent,
+    failWhatsApp: null,
     async sendEmail(i) { sent.push({ channel: 'email', to: i.to, body: i }); },
-    async sendWhatsApp(i) { sent.push({ channel: 'whatsapp', to: i.to, body: i.body }); },
+    async sendWhatsApp(i) {
+      const err = t.failWhatsApp?.(i.to);
+      if (err) throw err;
+      sent.push({ channel: 'whatsapp', to: i.to, body: i.body });
+      return `wamid.${sent.length}`;
+    },
     async sendInstagram(i) { sent.push({ channel: 'instagram', to: i.recipientId, body: i.text }); },
+    async sendSms(i) { sent.push({ channel: 'sms', to: i.to, body: i }); return `sms-${sent.length}`; },
   };
+  return t;
 }
 
 export function fakePayments(): Payments & { charges: any[]; sessions: any[] } {

@@ -315,7 +315,7 @@ const loadSettings = guard(async () => {
   $('sGuar').value = s.guarantee_mode; $('sGuarMin').value = s.guarantee_min_party; $('sFee').value = (s.no_show_fee_cents / 100).toFixed(2);
   $('sHours').value = s.opening_hours.map((p) => `${p.weekday} ${p.open} ${p.close}`).join('\n');
   $('sClosed').value = s.closed_dates.join('\n'); $('sReview').value = s.google_review_url || ''; $('sReviewMode').value = s.review_mode; $('sInfo').value = s.info_text || '';
-  $('sConn').textContent = `Stripe: ${s.stripe_connected ? 'spojen' : 'nije spojen'} · WhatsApp: ${s.whatsapp_connected ? 'spojen' : 'nije spojen'} · Fiskalizacija: ${s.fiscal_enabled ? 'uključena' : 'isključena'}`;
+  $('sConn').textContent = `Stripe: ${s.stripe_connected ? 'spojen' : 'nije spojen'} · WhatsApp: ${s.whatsapp_connected ? 'spojen' : 'nije spojen'} · SMS: ${s.sms_enabled ? 'uključen' : 'isključen'} · Fiskalizacija: ${s.fiscal_enabled ? 'uključena' : 'isključena'}`;
 });
 $('sSave').onclick = guard(async () => {
   $('sMsg').textContent = '';
