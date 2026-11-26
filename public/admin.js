@@ -164,10 +164,35 @@ async function loadRes() {
   const w = DATE === todayStr() ? `Danas, ${longDate(DATE, { weekday: undefined })}` : longDate(DATE);
   $('rWhen').textContent = w.charAt(0).toUpperCase() + w.slice(1);
   const [day, tables] = await Promise.all([api(`/reservations?date=${DATE}`), TABLES.length ? TABLES : api('/tables')]);
+  // nova rezervacija koju nije upisalo osoblje (web, chat, WhatsApp, telefon): obavijest i zvuk
+  if (DAY?.date === day.date) {
+    const known = new Set(DAY.reservations.map((r) => r.id));
+    const fresh = day.reservations.filter((r) => !known.has(r.id) && !['admin', 'walk_in'].includes(r.source) && !DEAD.includes(r.status));
+    if (fresh.length) {
+      toast(fresh.length === 1 ? `Nova rezervacija (${SOURCE[fresh[0].source] || fresh[0].source}): ${fresh[0].guest_name}, ${hm(fresh[0].start_at)}, ${nPers(fresh[0].party_size)}` : `${fresh.length} nove rezervacije`);
+      ding();
+    }
+  }
   DAY = day; TABLES = tables;
   renderRes();
 }
 LOADERS.res = guard(loadRes);
+
+/** lista za večer na papiru: vrijeme, gost, osoba, stol, napomene i kvadratić za kvačicu */
+$('rPrint').onclick = () => {
+  const list = DAY.reservations.filter((r) => !DEAD.includes(r.status));
+  const covers = list.filter((r) => r.status !== 'no_show').reduce((s, r) => s + r.party_size, 0);
+  $('print').className = 'list';
+  $('print').innerHTML = `<div class="plist"><h1>${esc(SET?.name || '')} · ${esc(longDate(DATE))}</h1>
+    <p class="sum">${nRes(list.length)} · ${nGuests(covers)} · ispisano ${hm(new Date())}</p>
+    <table><thead><tr><th></th><th>Vrijeme</th><th>Gost</th><th>Os.</th><th>Stol</th><th>Napomena</th></tr></thead><tbody>
+    ${list.map((r) => `<tr><td><span class="box"></span></td><td class="t">${hm(r.start_at)}</td>
+      <td><b>${isVip(r) ? '★ ' : ''}${esc(r.guest_name)}</b>${(r.guest_tags || []).filter((t) => !/^vip$/i.test(t)).length ? `<br>${esc(r.guest_tags.filter((t) => !/^vip$/i.test(t)).join(', '))}` : ''}${r.guest_phone ? `<br>${esc(r.guest_phone)}` : ''}</td>
+      <td class="t">${r.party_size}</td><td><b>${esc(r.table_label || '–')}</b> ${esc(r.zone || '')}</td>
+      <td>${esc([r.notes, r.guest_notes].filter(Boolean).join(' · '))}${r.status !== 'confirmed' ? ` <i>(${STATUS[r.status]})</i>` : ''}</td></tr>`).join('')}
+    </tbody></table></div>`;
+  print();
+};
 
 function filtered() {
   const q = $('rSearch').value.trim().toLowerCase();
@@ -783,6 +808,7 @@ function editTable(t) {
 $('tPrint').onclick = guard(async () => {
   const list = TABLES.filter((t) => t.active && !t.combo_of?.length).sort((p, q) => natural(p.zone, q.zone) || natural(p.label, q.label));
   if (!list.length) throw new Error('Nema aktivnih stolova za ispis.');
+  $('print').className = '';
   $('print').innerHTML = list.map((t) => `<div class="qcard"><div class="rn">${esc(SET?.name || '')}</div><div class="tn">Stol ${esc(t.label)}</div>
     <img src="/qr/m/${esc(t.qr_token)}" alt=""><p><b>Skenirajte za meni i narudžbu</b><br>Scan for the menu · Speisekarte scannen</p></div>`).join('');
   await Promise.all([...$('print').querySelectorAll('img')].map((img) => img.complete ? null : new Promise((ok) => { img.onload = img.onerror = ok; })));

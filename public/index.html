@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="hr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#1e4d43">
+<link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+<title>Opsis Restoran</title>
+<meta name="description" content="Rezervacije, AI asistent, QR meni i panel za restorane. Opsis Dalmatia, Split.">
+<link rel="stylesheet" href="/static/opsis.css">
+<style>
+  .band { background: var(--lamele); color: #fff; padding: 56px 24px 64px; }
+  .ct { max-width: 880px; margin: 0 auto; }
+  .wordmark { font: 700 14px var(--display); letter-spacing: .16em; text-transform: uppercase; opacity: .85; }
+  .band h1 { font-size: clamp(34px, 6vw, 56px); margin: 14px 0 12px; max-width: 16ch; }
+  .band p { font-size: 18px; max-width: 52ch; opacity: .9; margin: 0; }
+  .band .acts { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 26px; }
+  .band .btn { min-height: 48px; padding: 12px 20px; font-size: 15px; }
+  .band .btn-light { background: #fff; border-color: #fff; color: var(--skura); }
+  .band .btn-line { background: transparent; border-color: rgba(255, 255, 255, .5); color: #fff; }
+  main { padding: 36px 24px 56px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 380px), 1fr)); gap: 14px; }
+  .f { background: var(--vapno); border: 1px solid var(--crta); border-radius: 14px; padding: 18px; }
+  .f h2 { font-size: 20px; margin-bottom: 6px; }
+  .f p { margin: 0; color: var(--sivo); font-size: 15px; }
+  .demo { margin-top: 28px; padding: 20px; border-radius: 14px; background: var(--ulje-svj); border: 1px solid var(--ulje); }
+  .demo h2 { font-size: 22px; }
+  .demo ul { margin: 12px 0 0; padding: 0; list-style: none; display: grid; gap: 8px; }
+  .demo li { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: baseline; }
+  .demo a { font-weight: 700; }
+  .demo code { font-family: var(--mono); background: #fff; padding: 1px 6px; border-radius: 5px; }
+  footer { text-align: center; color: var(--sivo); font-size: 14px; padding: 0 24px 40px; }
+</style>
+</head>
+<body>
+<header class="band"><div class="ct">
+  <div class="wordmark">Opsis Restoran</div>
+  <h1>Stolovi, gosti i narudžbe na jednom mjestu</h1>
+  <p>Online rezervacije na webu restorana, AI asistent koji odgovara na chatu, WhatsAppu i telefonu, QR meni na stolu i panel za osoblje.</p>
+  <div class="acts"><a class="btn btn-light" href="/admin">Prijava za restorane</a><a class="btn btn-line" href="https://opsisdalmatia.com" rel="noopener">Opsis Dalmatia</a></div>
+</div></header>
+<main><div class="ct">
+  <div class="grid">
+    <div class="f"><h2>Rezervacije</h2><p>Gost bira dan, broj osoba i vrijeme. Potvrda i podsjetnik stižu na WhatsApp, SMS ili email, a termin može sam promijeniti ili otkazati.</p></div>
+    <div class="f"><h2>AI asistent</h2><p>Odgovara na pitanja o meniju, parkingu i radnom vremenu i sam upisuje rezervacije, na webu, WhatsAppu, Instagramu i telefonu.</p></div>
+    <div class="f"><h2>Raspored stolova</h2><p>Osoblje vidi cijelu večer po stolovima i satima, posjeda goste bez rezervacije i bilježi tko je VIP ili ima alergiju.</p></div>
+    <div class="f"><h2>QR meni</h2><p>Gost na stolu pregleda meni na svom jeziku, sakrije jela s alergenima, naruči ili pozove konobara.</p></div>
+  </div>
+  <section class="demo hidden" id="demo">
+    <h2>Demo restoran</h2>
+    <p class="muted" style="margin:6px 0 0">Izmišljeni podaci, slobodno klikajte.</p>
+    <ul>
+      <li><a href="/b/demo-konoba">Stranica za rezervaciju</a><span class="muted small">ono što vidi gost</span></li>
+      <li><a href="/admin?r=demo-konoba">Panel restorana</a><span class="muted small">oznaka <code>demo-konoba</code>, ključ <code>demo-key</code></span></li>
+      <li><a href="/m/demo-qr-3">QR meni za stol 3</a><span class="muted small">kao da ste skenirali kod na stolu</span></li>
+    </ul>
+  </section>
+</div></main>
+<footer>Opsis Dalmatia · Split</footer>
+<script>
+  fetch('/api/r/demo-konoba').then((r) => { if (r.ok) document.getElementById('demo').classList.remove('hidden'); }).catch(() => {});
+</script>
+</body>
+</html>
