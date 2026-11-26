@@ -107,6 +107,29 @@ export async function findAvailability(
   return out;
 }
 
+/** Stolovi u restoranu za zadani trenutak: tko je slobodan i tko sjedi (za gosta bez rezervacije i premještanje). */
+async function dayAround(db: Db, r: Restaurant, start: Date) {
+  return loadDay(db, r, utcToLocal(new Date(start.getTime() - 12 * 3600_000), r.timezone).date);
+}
+
+/** Najmanji slobodan stol za interval, bez obzira na radno vrijeme (gost koji je već tu). */
+export async function freeTableAt(
+  db: Db, r: Restaurant, partySize: number, start: Date, end: Date, zone?: string,
+): Promise<DiningTable | null> {
+  return freeTable(await dayAround(db, r, start), partySize, start.getTime(), end.getTime(), zone);
+}
+
+/** Je li stol (ili bilo koji njegov dio, kod spojenih) zauzet drugom rezervacijom u intervalu. */
+export async function tableBusy(
+  db: Db, r: Restaurant, tableId: number, start: Date, end: Date, excludeReservationId?: number,
+): Promise<boolean> {
+  const day = await dayAround(db, r, start);
+  const mine = day.physical.get(tableId) ?? [tableId];
+  return day.busy.some(
+    (b) => b.reservation_id !== excludeReservationId && b.start < end.getTime() && b.end > start.getTime() && b.tables.some((x) => mine.includes(x)),
+  );
+}
+
 /** Provjerava je li vrijeme unutar radnog vremena i vraća slobodan stol (ili null). */
 export async function pickTable(
   db: Db, r: Restaurant,

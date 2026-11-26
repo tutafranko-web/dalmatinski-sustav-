@@ -6,17 +6,20 @@ import fastifyCors from '@fastify/cors';
 import fastifyStatic from '@fastify/static';
 import type { Db } from './db.js';
 import type { Deps } from './deps.js';
-import { findAvailability, getRestaurantBySlug } from './services/availability.js';
+import { findAvailability, getRestaurantBySlug, openingWindows } from './services/availability.js';
 import {
   cancelReservation, createReservation, getByCode, listForDay, modifyReservation, setStatus, verifyGuest, confirmGuarantee, decideReview, guaranteeRedirect,
+  createWalkIn, moveTable, setReservationNotes,
 } from './services/reservations.js';
-import { anonymizeGuest } from './services/guests.js';
+import { anonymizeGuest, guestHistory, listGuests, updateGuest } from './services/guests.js';
+import { statsSummary } from './services/stats.js';
+import { qrSvg } from './services/qr.js';
 import { onWhatsAppStatus } from './services/notifications.js';
 import { AppError, type Restaurant } from './services/types.js';
-import { utcToLocal } from './time.js';
+import { isValidDate, utcToLocal } from './time.js';
 import { fallbackReply, runChat } from './ai/chatbot.js';
 import { executeTool } from './ai/tools.js';
-import { openOrders, placeOrder, publicMenu, setOrderStatus, tableByQr, upsertMenuItem } from './services/orders.js';
+import { adminMenu, deleteMenuItem, openOrders, placeOrder, publicMenu, setOrderStatus, tableByQr, upsertMenuItem } from './services/orders.js';
 import { issueInvoice } from './fiscal/invoices.js';
 import type { CisSender } from './fiscal/cis.js';
 
@@ -113,6 +116,16 @@ export async function buildApp(db: Db, deps: Deps, opts: AppOptions = {}): Promi
   });
   app.get('/admin', (_req: any, reply: any) => reply.sendFile('admin.html'));
   app.get('/widget.js', (_req: any, reply: any) => reply.type('application/javascript').sendFile('widget.js'));
+  // QR kodovi za ispis: meni po stolu i link za rezervaciju (sadrže samo javne adrese)
+  const svg = (reply: any, body: string) => reply.type('image/svg+xml').header('cache-control', 'public, max-age=86400').send(body);
+  app.get('/qr/m/:token', async (req: any, reply: any) => {
+    const t = await tableByQr(db, String(req.params.token));
+    return svg(reply, await qrSvg(`${deps.config.publicBaseUrl}/m/${t.qr_token}`));
+  });
+  app.get('/qr/b/:slug', async (req: any, reply: any) => {
+    const r = await getRestaurantBySlug(db, String(req.params.slug));
+    return svg(reply, await qrSvg(`${deps.config.publicBaseUrl}/b/${r.slug}`));
+  });
   app.get('/chat.js', (_req: any, reply: any) => reply.type('application/javascript').sendFile('chat.js'));
 
   // ---------- javni API ----------
@@ -123,7 +136,15 @@ export async function buildApp(db: Db, deps: Deps, opts: AppOptions = {}): Promi
       name: r.name, address: r.address, phone: r.phone, zones, max_party_size: r.max_party_size,
       guarantee: r.guarantee_mode === 'card' ? { min_party: r.guarantee_min_party, fee_cents: r.no_show_fee_cents } : null,
       opening_hours: r.opening_hours, closed_dates: r.closed_dates, chat_enabled: !!deps.llm,
+      duration_minutes: r.default_duration_minutes,
+      has_menu: (await db.query('select 1 from menu_items where restaurant_id = $1 and available and archived_at is null limit 1', [r.id])).rows.length > 0,
     };
+  });
+
+  // jelovnik za stranicu rezervacije (bez naručivanja: to ide samo preko QR koda na stolu)
+  app.get('/api/r/:slug/menu', async (req: any) => {
+    const r = await getRestaurantBySlug(db, req.params.slug);
+    return { menu: await publicMenu(db, r.id) };
   });
 
   app.get('/api/r/:slug/availability', async (req: any) => {
@@ -143,14 +164,20 @@ export async function buildApp(db: Db, deps: Deps, opts: AppOptions = {}): Promi
       name: b.name, phone: b.phone, email: b.email, language: b.language, partySize: Number(b.partySize),
       date: b.date, time: b.time, zone: b.zone, notes: b.notes, source: 'web', marketingConsent: !!b.marketingConsent,
     });
-    return reply.status(201).send({ code: reservation.code, status: reservation.status, guaranteeUrl, notified, ...utcToLocal(new Date(reservation.start_at), r.timezone) });
+    return reply.status(201).send({
+      code: reservation.code, status: reservation.status, guaranteeUrl, notified, party_size: reservation.party_size,
+      start_at: reservation.start_at, end_at: reservation.end_at, ...utcToLocal(new Date(reservation.start_at), r.timezone),
+    });
   });
 
   app.get('/api/r/:slug/reservations/:code', async (req: any) => {
     const r = await getRestaurantBySlug(db, req.params.slug);
     const res = await getByCode(db, r, req.params.code);
     await verifyGuest(db, res, req.query.contact);
-    return { code: res.code, status: res.status, party_size: res.party_size, ...utcToLocal(new Date(res.start_at), r.timezone) };
+    return {
+      code: res.code, status: res.status, party_size: res.party_size, start_at: res.start_at, end_at: res.end_at,
+      ...utcToLocal(new Date(res.start_at), r.timezone),
+    };
   });
 
   app.post('/api/r/:slug/reservations/:code/cancel', async (req: any) => {
@@ -167,7 +194,10 @@ export async function buildApp(db: Db, deps: Deps, opts: AppOptions = {}): Promi
     const res = await modifyReservation(db, deps, r, req.params.code, b.contact, {
       date: b.date, time: b.time, partySize: b.partySize ? Number(b.partySize) : undefined,
     });
-    return { code: res.code, status: res.status, party_size: res.party_size, ...utcToLocal(new Date(res.start_at), r.timezone) };
+    return {
+      code: res.code, status: res.status, party_size: res.party_size, start_at: res.start_at, end_at: res.end_at,
+      ...utcToLocal(new Date(res.start_at), r.timezone),
+    };
   });
 
   app.post('/api/r/:slug/chat', async (req: any) => {
@@ -214,7 +244,41 @@ export async function buildApp(db: Db, deps: Deps, opts: AppOptions = {}): Promi
   app.get('/api/admin/:slug/reservations', async (req: any) => {
     const r = await admin(req);
     const date = String(req.query.date ?? utcToLocal(deps.now(), r.timezone).date);
-    return { date, reservations: await listForDay(db, r, date) };
+    // windows: radno vrijeme tog dana u minutama od ponoći (za raspored stolova po satima)
+    return { date, windows: isValidDate(date) ? openingWindows(r, date) : [], reservations: await listForDay(db, r, date) };
+  });
+
+  // gost bez rezervacije: konobar ga posjeda odmah
+  app.post('/api/admin/:slug/walkin', async (req: any, reply: any) => {
+    const r = await admin(req);
+    const b = req.body ?? {};
+    return reply.status(201).send(await createWalkIn(db, deps, r, {
+      partySize: Number(b.partySize), tableId: b.tableId ? Number(b.tableId) : null, name: b.name, phone: b.phone, notes: b.notes, force: b.force === true,
+    }));
+  });
+
+  app.post('/api/admin/:slug/reservations/:id/table', async (req: any) => {
+    const r = await admin(req);
+    return moveTable(db, r, Number(req.params.id), Number(req.body?.tableId), { force: req.body?.force === true });
+  });
+
+  app.post('/api/admin/:slug/reservations/:id/notes', async (req: any) => {
+    const r = await admin(req);
+    return setReservationNotes(db, r, Number(req.params.id), req.body?.notes);
+  });
+
+  // gosti: konobar vidi tko dolazi i zapisuje bilješke (alergije, omiljeni stol); brisanje podataka ostaje vlasniku
+  app.get('/api/admin/:slug/guests', async (req: any) => {
+    const r = await admin(req);
+    return listGuests(db, r, { q: req.query.q, now: deps.now() });
+  });
+  app.get('/api/admin/:slug/guests/:id/reservations', async (req: any) => {
+    const r = await admin(req);
+    return guestHistory(db, r, Number(req.params.id));
+  });
+  app.put('/api/admin/:slug/guests/:id', async (req: any) => {
+    const r = await admin(req);
+    return updateGuest(db, r, Number(req.params.id), req.body ?? {});
   });
 
   app.post('/api/admin/:slug/reservations', async (req: any, reply: any) => {
@@ -325,7 +389,11 @@ export async function buildApp(db: Db, deps: Deps, opts: AppOptions = {}): Promi
 
   app.get('/api/admin/:slug/menu', async (req: any) => {
     const r = await admin(req);
-    return (await db.query('select * from menu_items where restaurant_id = $1 order by sort, category, id', [r.id])).rows;
+    return adminMenu(db, r.id);
+  });
+  app.delete('/api/admin/:slug/menu/:id', async (req: any) => {
+    const r = await admin(req, true);
+    return { result: await deleteMenuItem(db, r.id, Number(req.params.id)) };
   });
   app.post('/api/admin/:slug/menu', async (req: any, reply: any) => {
     const r = await admin(req, true);
@@ -365,7 +433,11 @@ export async function buildApp(db: Db, deps: Deps, opts: AppOptions = {}): Promi
         where restaurant_id = $1 and start_at >= $2 and start_at < $3 group by source, status order by source, status`,
       [r.id, from, to],
     )).rows;
-    return { from, to, rows };
+    // pregled po danima za grafove: ?days=7|30|90 (zadnjih N dana, uključujući danas)
+    const days = Math.min(Math.max(Number(req.query.days) || 30, 1), 366);
+    const today = utcToLocal(deps.now(), r.timezone).date;
+    const first = utcToLocal(new Date(deps.now().getTime() - (days - 1) * 86400_000), r.timezone).date;
+    return { from, to, rows, summary: await statsSummary(db, r, first, today) };
   });
 
   // ---------- super admin (ti) ----------

@@ -35,7 +35,7 @@ export async function upsertMenuItem(db: Db, restaurantId: number, m: MenuItemIn
   if (id) {
     const { rows } = await db.query(
       `update menu_items set category=$2, name=$3, description=$4, price_cents=$5, vat_rate=$6, allergens=$7, available=$8, sort=$9
-        where id = $10 and restaurant_id = $1 returning *`, [...vals, id]);
+        where id = $10 and restaurant_id = $1 and archived_at is null returning *`, [...vals, id]);
     if (!rows[0]) throw new AppError(404, 'item_not_found', 'Stavka ne postoji');
     return rows[0];
   }
@@ -46,11 +46,33 @@ export async function upsertMenuItem(db: Db, restaurantId: number, m: MenuItemIn
   ).rows[0];
 }
 
+/**
+ * Briše jelo. Jelo koje je već bilo naručeno ostaje u bazi radi starih narudžbi i računa,
+ * ali se arhivira: nestaje iz panela i menija. Vraća 'deleted' ili 'archived'.
+ */
+export async function deleteMenuItem(db: Db, restaurantId: number, id: number): Promise<'deleted' | 'archived'> {
+  const item = (await db.query('select id from menu_items where id = $1 and restaurant_id = $2 and archived_at is null', [id, restaurantId])).rows[0];
+  if (!item) throw new AppError(404, 'item_not_found', 'Stavka ne postoji');
+  const used = (await db.query('select 1 from order_items where menu_item_id = $1 limit 1', [id])).rows.length > 0;
+  if (!used) {
+    await db.query('delete from menu_items where id = $1', [id]);
+    return 'deleted';
+  }
+  await db.query('update menu_items set archived_at = now(), available = false where id = $1', [id]);
+  return 'archived';
+}
+
+export async function adminMenu(db: Db, restaurantId: number) {
+  return (await db.query(
+    'select * from menu_items where restaurant_id = $1 and archived_at is null order by sort, category, id', [restaurantId],
+  )).rows;
+}
+
 export async function publicMenu(db: Db, restaurantId: number) {
   return (
     await db.query(
       `select id, category, name, description, price_cents, allergens from menu_items
-        where restaurant_id = $1 and available order by sort, category, id`, [restaurantId])
+        where restaurant_id = $1 and available and archived_at is null order by sort, category, id`, [restaurantId])
   ).rows;
 }
 
@@ -83,7 +105,7 @@ export async function placeOrder(
     if (recent >= 10) throw new AppError(429, 'too_many', 'Previše zahtjeva, pozovite konobara');
     const ids = items.map((i) => i.menu_item_id);
     const menu = ids.length
-      ? (await t.query(`select * from menu_items where restaurant_id = $1 and available and id = any($2)`, [table.restaurant_id, ids])).rows
+      ? (await t.query(`select * from menu_items where restaurant_id = $1 and available and archived_at is null and id = any($2)`, [table.restaurant_id, ids])).rows
       : [];
     const byId = new Map(menu.map((m: any) => [m.id, m]));
     const missing = ids.filter((id) => !byId.has(id));

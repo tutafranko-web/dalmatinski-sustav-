@@ -1,10 +1,10 @@
 import { randomInt } from 'node:crypto';
 import type { Db } from '../db.js';
 import type { Deps } from '../deps.js';
-import { findAvailability, pickTable } from './availability.js';
+import { findAvailability, freeTableAt, pickTable, tableBusy } from './availability.js';
 import { formatEur, lang, type MessageData, type MessageKind } from './messages.js';
 import { enqueueGuestMessage, type Channel } from './notifications.js';
-import { AppError, type Reservation, type ReservationStatus, type Restaurant } from './types.js';
+import { AppError, type DiningTable, type Reservation, type ReservationStatus, type Restaurant } from './types.js';
 import { isValidDate, isValidTime, localToUtc, utcToLocal } from '../time.js';
 
 const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // bez 0/O/1/I
@@ -338,6 +338,101 @@ export async function setStatus(db: Db, deps: Deps, r: Restaurant, id: number, s
   ).rows[0];
 }
 
+const ACTIVE: ReservationStatus[] = ['pending_guarantee', 'confirmed', 'seated'];
+
+async function reservationById(db: Db, r: Restaurant, id: number): Promise<Reservation> {
+  const res = (await db.query<Reservation>('select * from reservations where id = $1 and restaurant_id = $2', [id, r.id])).rows[0];
+  if (!res) throw new AppError(404, 'reservation_not_found', 'Rezervacija nije pronađena');
+  return res;
+}
+
+async function activeTable(db: Db, r: Restaurant, tableId: number) {
+  const t = (await db.query<DiningTable>('select * from dining_tables where id = $1 and restaurant_id = $2 and active', [tableId, r.id])).rows[0];
+  if (!t) throw new AppError(404, 'table_not_found', 'Stol ne postoji ili nije aktivan');
+  return t;
+}
+
+function assertFits(t: DiningTable, partySize: number, force?: boolean) {
+  if (!force && partySize > t.max_capacity)
+    throw new AppError(409, 'table_too_small', `Stol ${t.label} je za najviše ${t.max_capacity} osoba`);
+}
+
+/**
+ * Osoblje premješta rezervaciju na drugi stol. Zauzet stol se ne dopušta nikad;
+ * premali samo uz force (npr. konobar doda stolicu).
+ */
+export async function moveTable(db: Db, r: Restaurant, id: number, tableId: number, opts: { force?: boolean } = {}) {
+  return db.tx(async (t) => {
+    await t.query('select id from restaurants where id = $1 for update', [r.id]);
+    const res = await reservationById(t, r, id);
+    if (!ACTIVE.includes(res.status)) throw new AppError(409, 'not_modifiable', 'Ova rezervacija se više ne može mijenjati');
+    const table = await activeTable(t, r, tableId);
+    assertFits(table, res.party_size, opts.force);
+    if (await tableBusy(t, r, table.id, new Date(res.start_at), new Date(res.end_at), res.id))
+      throw new AppError(409, 'table_busy', `Stol ${table.label} je u to vrijeme zauzet`);
+    return (await t.query<Reservation>(
+      'update reservations set table_id = $2, updated_at = now() where id = $1 returning *', [res.id, table.id],
+    )).rows[0];
+  });
+}
+
+/** Napomena osoblja uz rezervaciju (npr. "rođendan, torta u 21 h"). */
+export async function setReservationNotes(db: Db, r: Restaurant, id: number, notes: unknown) {
+  await reservationById(db, r, id);
+  return (await db.query<Reservation>(
+    'update reservations set notes = $2, updated_at = now() where id = $1 returning *', [id, String(notes ?? '').trim().slice(0, 500)],
+  )).rows[0];
+}
+
+/**
+ * Gost bez rezervacije: sjeda odmah, na zadani stol ili najmanji slobodan.
+ * Ne šalje poruke. Kontakt nije obavezan; ako je upisan, posjet se pribroji tom gostu.
+ */
+export async function createWalkIn(
+  db: Db, deps: Deps, r: Restaurant,
+  input: { partySize: number; tableId?: number | null; name?: string | null; phone?: string | null; notes?: string | null; force?: boolean },
+): Promise<Reservation & { table_label: string }> {
+  const partySize = Math.floor(Number(input.partySize));
+  if (!(partySize >= 1 && partySize <= 100)) throw new AppError(400, 'bad_party', 'Broj osoba mora biti barem 1');
+  const phone = normalizePhone(input.phone);
+  if (input.phone && !phone) throw new AppError(400, 'bad_phone', 'Neispravan broj telefona');
+  const start = new Date(Math.floor(deps.now().getTime() / 60_000) * 60_000);
+  const end = new Date(start.getTime() + r.default_duration_minutes * 60_000);
+  return db.tx(async (t) => {
+    await t.query('select id from restaurants where id = $1 for update', [r.id]);
+    let table: DiningTable | null;
+    if (input.tableId) {
+      table = await activeTable(t, r, Number(input.tableId));
+      assertFits(table, partySize, input.force);
+      if (await tableBusy(t, r, table.id, start, end)) throw new AppError(409, 'table_busy', `Stol ${table.label} je sada zauzet`);
+    } else {
+      table = await freeTableAt(t, r, partySize, start, end);
+      if (!table) throw new AppError(409, 'no_table', 'Nema slobodnog stola za toliko osoba');
+    }
+    const name = String(input.name ?? '').trim().slice(0, 100) || 'Gost bez rezervacije';
+    let guest = phone ? (await t.query('select * from guests where restaurant_id = $1 and phone = $2', [r.id, phone])).rows[0] : null;
+    if (!guest) {
+      guest = (await t.query(
+        'insert into guests (restaurant_id, name, phone, language) values ($1,$2,$3,$4) returning *',
+        [r.id, name, phone, r.default_language],
+      )).rows[0];
+    }
+    let res: Reservation | undefined;
+    for (let i = 0; i < 5 && !res; i++) {
+      try {
+        res = (await t.query<Reservation>(
+          `insert into reservations (code, restaurant_id, guest_id, table_id, party_size, start_at, end_at, status, source, notes, created_at)
+           values ($1,$2,$3,$4,$5,$6,$7,'seated','walk_in',$8,$9) returning *`,
+          [newCode(), r.id, guest.id, table.id, partySize, start, end, String(input.notes ?? '').slice(0, 500), deps.now()],
+        )).rows[0];
+      } catch (e: any) {
+        if (!String(e?.message).includes('reservations_code_key')) throw e;
+      }
+    }
+    return { ...res!, table_label: table.label };
+  });
+}
+
 export async function listForDay(db: Db, r: Restaurant, date: string) {
   if (!isValidDate(date)) throw new AppError(400, 'bad_date', 'Neispravan datum');
   const from = localToUtc(date, '00:00', r.timezone);
@@ -345,7 +440,7 @@ export async function listForDay(db: Db, r: Restaurant, date: string) {
   return (
     await db.query(
       `select res.*, g.name as guest_name, g.phone as guest_phone, g.email as guest_email, g.visits, g.no_shows,
-              t.label as table_label, t.zone
+              g.notes as guest_notes, g.tags as guest_tags, t.label as table_label, t.zone
          from reservations res join guests g on g.id = res.guest_id left join dining_tables t on t.id = res.table_id
         where res.restaurant_id = $1 and res.start_at >= $2 and res.start_at < $3
         order by res.start_at`,

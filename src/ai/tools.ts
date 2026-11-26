@@ -95,7 +95,7 @@ function hoursText(r: Restaurant): string {
 
 async function restaurantInfo(db: Db, r: Restaurant) {
   const menu = (
-    await db.query(`select category, name, price_cents, allergens from menu_items where restaurant_id = $1 and available order by sort, id`, [r.id])
+    await db.query(`select category, name, price_cents, allergens from menu_items where restaurant_id = $1 and available and archived_at is null order by sort, id`, [r.id])
   ).rows.map((m: any) => ({
     category: m.category, name: m.name.hr ?? Object.values(m.name)[0], name_en: m.name.en, price: formatEur(m.price_cents), allergens: m.allergens,
   }));
