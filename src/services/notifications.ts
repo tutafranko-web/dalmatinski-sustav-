@@ -114,6 +114,9 @@ export async function processOutbox(db: Db, deps: Deps, limit = 50): Promise<num
         providerId = await deps.transport.sendSms({ to: m.recipient, from: smsSender(r, deps.config.smsSenderOverride), text: p.text });
       } else if (m.channel === 'instagram') {
         await deps.transport.sendInstagram({ igAccountId: m.instagram_account_id, recipientId: m.recipient, text: p.text });
+      } else {
+        // nikad tiho "poslano": npr. starija verzija servera koja ne zna novi kanal
+        throw new SendError(`Nepoznat kanal ${m.channel}`, false);
       }
       await db.query('update outbox set sent_at = $2, attempts = attempts + 1, provider_id = $3 where id = $1', [m.id, now, providerId]);
       sent++;

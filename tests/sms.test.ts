@@ -138,6 +138,17 @@ describe('SMS kao rezervni kanal', () => {
   });
 });
 
+describe('outbox', () => {
+  it('poruka nepoznatog kanala nikad nije tiho "poslana"', async () => {
+    const { db, deps, r } = await setup();
+    await db.query(`insert into outbox (restaurant_id, channel, recipient, kind, payload, send_after) values ($1, 'fax', 'x', 'confirmation', '{}', $2)`, [r.id, new Date(0)]);
+    expect(await processOutbox(db, deps)).toBe(0);
+    const row = (await db.query('select sent_at, last_error from outbox')).rows[0];
+    expect(row.sent_at).toBeNull();
+    expect(row.last_error).toContain('fax');
+  });
+});
+
 describe('SMS ne smije koštati više nego treba', () => {
   it('fiksni broj, nepoznata zemlja i potrošen limit ne dobivaju SMS', async () => {
     const { db, deps, r } = await smsSetup({ withWhatsApp: false });
