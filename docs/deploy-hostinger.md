@@ -44,7 +44,8 @@ Provjera, kad se proširi (nekoliko minuta): `nslookup restoran.opsisdalmatia.co
 ## 4. Pokretanje
 
 ```bash
-git clone https://github.com/tutafranko-web/dalmatinski-sustav-.git opsis-restoran
+# dok grana rad/priprema-za-deploy nije spojena na main, klonira se ona (bez -b dobiješ staru verziju)
+git clone -b rad/priprema-za-deploy https://github.com/tutafranko-web/dalmatinski-sustav-.git opsis-restoran
 cd opsis-restoran
 cp .env.example .env
 nano .env
