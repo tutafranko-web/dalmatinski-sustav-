@@ -225,3 +225,19 @@ describe('demo restoran', () => {
     expect(hist).toBeGreaterThan(100);
   });
 });
+
+describe('stranica za rezervaciju', () => {
+  it('gost mijenja termin i dozna je li obavijest stvarno poslana; podaci za kalendar', async () => {
+    const { app } = await app0();
+    const info = (await app.inject({ url: '/api/r/konoba-test' })).json();
+    expect(info.timezone).toBe('Europe/Zagreb');
+    const mk = (p: Record<string, unknown>) => app.inject({ method: 'POST', url: '/api/r/konoba-test/reservations', payload: { name: 'G', partySize: 2, date: '2026-07-11', time: '20:00', ...p } }).then((r: any) => r.json());
+    const withPhone = await mk({ phone: '0911000001' });
+    expect(withPhone).toMatchObject({ party_size: 2, start_at: '2026-07-11T18:00:00.000Z', end_at: '2026-07-11T20:00:00.000Z' });
+    const m1 = (await app.inject({ method: 'POST', url: `/api/r/konoba-test/reservations/${withPhone.code}/modify`, payload: { contact: '0911000001', time: '21:00' } })).json();
+    expect(m1).toMatchObject({ time: '21:00', notified: ['whatsapp'] });
+    const view = (await app.inject({ url: `/api/r/konoba-test/reservations/${withPhone.code}?contact=0911000001` })).json();
+    expect(view).toMatchObject({ start_at: '2026-07-11T19:00:00.000Z', end_at: '2026-07-11T21:00:00.000Z', time: '21:00' });
+    expect((await app.inject({ url: '/favicon.ico' })).headers.location).toBe('/static/favicon.svg');
+  });
+});

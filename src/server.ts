@@ -137,7 +137,7 @@ export async function buildApp(db: Db, deps: Deps, opts: AppOptions = {}): Promi
       name: r.name, address: r.address, phone: r.phone, zones, max_party_size: r.max_party_size,
       guarantee: r.guarantee_mode === 'card' ? { min_party: r.guarantee_min_party, fee_cents: r.no_show_fee_cents } : null,
       opening_hours: r.opening_hours, closed_dates: r.closed_dates, chat_enabled: !!deps.llm,
-      duration_minutes: r.default_duration_minutes,
+      duration_minutes: r.default_duration_minutes, timezone: r.timezone,
       has_menu: (await db.query('select 1 from menu_items where restaurant_id = $1 and available and archived_at is null limit 1', [r.id])).rows.length > 0,
     };
   });
@@ -196,7 +196,7 @@ export async function buildApp(db: Db, deps: Deps, opts: AppOptions = {}): Promi
       date: b.date, time: b.time, partySize: b.partySize ? Number(b.partySize) : undefined,
     });
     return {
-      code: res.code, status: res.status, party_size: res.party_size, start_at: res.start_at, end_at: res.end_at,
+      code: res.code, status: res.status, party_size: res.party_size, start_at: res.start_at, end_at: res.end_at, notified: res.notified,
       ...utcToLocal(new Date(res.start_at), r.timezone),
     };
   });

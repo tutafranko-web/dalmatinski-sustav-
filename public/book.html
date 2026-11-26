@@ -3,199 +3,201 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#1e4d43">
+<link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
 <title>Rezervacija</title>
+<link rel="stylesheet" href="/static/opsis.css">
 <style>
-  :root { --ink:#1b1f24; --muted:#5f6b76; --line:#dfe3e8; --accent:#0f5c8c; --bg:#f7f8fa; --ok:#1f7a4d; --err:#b3261e; }
-  * { box-sizing: border-box; }
-  body { margin:0; font: 16px/1.45 system-ui, -apple-system, Segoe UI, Roboto, sans-serif; color:var(--ink); background:var(--bg); }
-  main { max-width: 520px; margin: 0 auto; padding: 20px 16px 40px; }
-  h1 { font-size: 22px; margin: 4px 0 2px; }
-  .sub { color: var(--muted); font-size: 14px; margin-bottom: 16px; }
-  .card { background:#fff; border:1px solid var(--line); border-radius: 12px; padding: 16px; margin-bottom: 14px; }
-  label { display:block; font-size: 13px; color: var(--muted); margin: 10px 0 4px; }
-  input, select, textarea { width:100%; padding: 10px 12px; border:1px solid var(--line); border-radius: 8px; font: inherit; background:#fff; }
-  .row { display:flex; gap: 10px; } .row > * { flex:1; }
-  .slots { display:flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
-  .slot { padding: 8px 12px; border:1px solid var(--line); border-radius: 8px; background:#fff; cursor:pointer; font: inherit; }
-  .slot.sel { border-color: var(--accent); background: var(--accent); color:#fff; }
-  button.primary { width:100%; margin-top: 14px; padding: 12px; border:0; border-radius: 8px; background: var(--accent); color:#fff; font: 600 16px system-ui; cursor:pointer; }
-  button.primary:disabled { opacity: .5; cursor: default; }
-  .msg { padding: 10px 12px; border-radius: 8px; margin-top: 10px; font-size: 14px; }
-  .msg.err { background:#fdecea; color: var(--err); } .msg.ok { background:#e8f5ee; color: var(--ok); }
-  .muted { color: var(--muted); font-size: 13px; }
-  .hp { position:absolute; left:-9999px; }
-  .langs { float:right; } .langs button { border:0; background:none; color:var(--muted); cursor:pointer; font: 13px system-ui; }
-  .langs button.on { color: var(--ink); font-weight: 600; }
-  .code { font: 700 26px ui-monospace, monospace; letter-spacing: 3px; }
-  a.pay { display:block; text-align:center; text-decoration:none; margin-top:10px; padding:12px; border-radius:8px; background:var(--accent); color:#fff; font:600 16px system-ui; }
-  .hidden { display:none; }
+  body { background: var(--kamen); }
+  .wrap { max-width: 560px; margin: 0 auto; min-height: 100vh; background: var(--kamen); }
+  header.band { background: var(--lamele); color: #fff; padding: 14px 20px 20px; }
+  .langs { display: flex; justify-content: flex-end; gap: 2px; margin-bottom: 6px; }
+  .langs button { border: 0; background: none; color: rgba(255, 255, 255, .75); font: 700 13px var(--body); padding: 6px 8px; border-radius: 6px; cursor: pointer; letter-spacing: .04em; }
+  .langs button.on { color: #fff; background: rgba(255, 255, 255, .14); }
+  header h1 { font-size: 32px; }
+  .addr { margin-top: 4px; font-size: 14px; opacity: .88; }
+  .hrow { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+  .hbtn { display: inline-flex; align-items: center; gap: 6px; border: 1px solid rgba(255, 255, 255, .35); background: rgba(255, 255, 255, .08); color: #fff;
+    font: 600 14px var(--body); padding: 7px 12px; border-radius: 999px; cursor: pointer; text-decoration: none; }
+  .hbtn:hover { background: rgba(255, 255, 255, .16); }
+  .hbtn .dot { width: 8px; height: 8px; border-radius: 50%; background: #8fd19e; }
+  .hbtn .dot.off { background: #f1a79f; }
+
+  main { padding: 18px 16px 40px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; }
+  main > *, #pick > *, #mView > * { min-width: 0; }
+  .sec { background: var(--vapno); border: 1px solid var(--crta); border-radius: 14px; padding: 16px; }
+  .sec h2 { font-size: 19px; margin-bottom: 12px; display: flex; align-items: baseline; gap: 8px; }
+  .sec h2 small { font: 500 13px var(--body); color: var(--sivo); }
+
+  .stepper { display: flex; align-items: center; gap: 14px; }
+  .stepper button { width: 48px; height: 48px; border-radius: 50%; border: 1px solid var(--crta); background: #fff; font: 600 24px/1 var(--body); color: var(--skura); cursor: pointer; }
+  .stepper button:disabled { opacity: .35; cursor: default; }
+  .stepper output { font: 700 34px var(--mono); min-width: 52px; text-align: center; }
+  .stepper .lbl { color: var(--sivo); }
+  .bignote { margin-top: 10px; font-size: 14px; color: var(--sivo); }
+
+  .days { display: flex; gap: 8px; overflow-x: auto; padding: 2px 2px 8px; margin: 0 -2px; scroll-snap-type: x proximity; scrollbar-width: thin; }
+  .day { flex: 0 0 auto; width: 70px; padding: 8px 4px 9px; border: 1px solid var(--crta); border-radius: 12px; background: #fff; text-align: center; cursor: pointer; scroll-snap-align: start; color: var(--tinta); }
+  .day .wd { font: 700 11px var(--body); letter-spacing: .08em; text-transform: uppercase; color: var(--sivo); }
+  .day .dn { font: 700 24px var(--display); line-height: 1.15; }
+  .day .mo { font-size: 12px; color: var(--sivo); }
+  .day.sel { background: var(--skura); border-color: var(--skura); color: #fff; }
+  .day.sel .wd, .day.sel .mo { color: rgba(255, 255, 255, .85); }
+  .day:disabled { cursor: default; background: transparent; border-style: dashed; color: var(--sivo); }
+  .day:disabled .dn { text-decoration: line-through; text-decoration-thickness: 1px; }
+  .day.other { display: grid; place-items: center; font: 600 13px var(--body); color: var(--skura); }
+  .datepick { margin-top: 8px; }
+
+  .zones { display: flex; flex-wrap: wrap; gap: 8px; }
+  .zones button { border: 1px solid var(--crta); background: #fff; border-radius: 999px; padding: 8px 14px; font: 600 14px var(--body); cursor: pointer; color: var(--tinta); }
+  .zones button.sel { background: var(--skura); border-color: var(--skura); color: #fff; }
+
+  .part { margin-top: 4px; }
+  .part + .part { margin-top: 14px; }
+  .part h3 { font: 700 11px var(--body); letter-spacing: .12em; text-transform: uppercase; color: var(--sivo); margin: 0 0 8px; }
+  .slots { display: grid; grid-template-columns: repeat(auto-fill, minmax(78px, 1fr)); gap: 8px; }
+  .slot { padding: 11px 4px; border: 1px solid var(--crta); border-radius: 10px; background: #fff; font: 700 17px var(--mono); cursor: pointer; color: var(--tinta); }
+  .slot:hover { border-color: var(--skura); }
+  .slot.sel { background: var(--skura); border-color: var(--skura); color: #fff; }
+  .slot.skel { height: 46px; border-color: transparent; background: linear-gradient(90deg, var(--crta-2), #f4f5f1, var(--crta-2)); background-size: 200% 100%; animation: sh 1.2s linear infinite; }
+  @keyframes sh { to { background-position: -200% 0; } }
+  .none { padding: 14px; border-radius: 10px; background: var(--kamen); color: var(--sivo); font-size: 15px; }
+  .none .btn { margin-top: 10px; }
+
+  form.details { display: grid; gap: 12px; }
+  .hp { position: absolute; left: -9999px; }
+  .ginfo { padding: 10px 12px; border-radius: 10px; background: var(--ulje-svj); color: var(--ulje-tamno); font-size: 14px; }
+  .msg { padding: 11px 13px; border-radius: 10px; font-size: 15px; font-weight: 600; }
+  .msg.err { background: var(--crveno-svj); color: var(--crveno); }
+  .msg.ok { background: var(--zeleno-svj); color: var(--skura); }
+  .msg .alts { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+  .msg .alts button { border: 1px solid currentColor; background: #fff; border-radius: 8px; padding: 6px 10px; font: 700 14px var(--mono); color: var(--crveno); cursor: pointer; }
+  .privacy { font-size: 13px; color: var(--sivo); margin: 0; }
+  .submit-sum { display: block; font: 500 13px var(--body); opacity: .85; margin-top: 2px; }
+
+  /* listić rezervacije */
+  .ticket { background: var(--vapno); border-radius: 16px; box-shadow: var(--sjena); overflow: hidden; border: 1px solid var(--crta); }
+  .t-top { padding: 22px 20px 18px; }
+  .t-top .rn { font: 700 12px var(--body); letter-spacing: .14em; text-transform: uppercase; color: var(--sivo); }
+  .t-top h2 { font-size: 34px; margin: 6px 0 4px; }
+  .t-top p { margin: 0; color: var(--sivo); }
+  .t-facts { display: grid; grid-template-columns: 1.6fr 1fr 1fr; gap: 10px; margin-top: 18px; }
+  .t-facts span { display: block; font: 700 11px var(--body); letter-spacing: .1em; text-transform: uppercase; color: var(--sivo); }
+  .t-facts b { font: 700 20px var(--display); }
+  .t-facts .tm { font: 700 22px var(--mono); }
+  .perf { position: relative; height: 0; border-top: 2px dashed var(--crta); margin: 0 18px; }
+  .perf::before, .perf::after { content: ''; position: absolute; top: -12px; width: 22px; height: 22px; border-radius: 50%; background: var(--kamen); border: 1px solid var(--crta); }
+  .perf::before { left: -30px; } .perf::after { right: -30px; }
+  .t-stub { padding: 16px 20px 20px; display: grid; gap: 12px; }
+  .t-stub .code { font: 700 30px var(--mono); letter-spacing: .22em; }
+  .t-stub .lab { font: 700 11px var(--body); letter-spacing: .1em; text-transform: uppercase; color: var(--sivo); }
+  .t-acts { display: flex; flex-wrap: wrap; gap: 8px; }
+  .t-status { display: inline-block; margin-top: 8px; }
+
+  /* donja ploča: meni i radno vrijeme */
+  .sheet-bg { position: fixed; inset: 0; background: rgba(20, 30, 27, .4); opacity: 0; pointer-events: none; transition: opacity .2s; z-index: 30; }
+  .sheet-bg.on { opacity: 1; pointer-events: auto; }
+  .sheet { position: fixed; left: 50%; bottom: 0; width: min(560px, 100%); max-height: 86vh; transform: translate(-50%, 102%); transition: transform .25s ease;
+    background: var(--vapno); border-radius: 18px 18px 0 0; z-index: 31; display: flex; flex-direction: column; box-shadow: 0 -10px 40px rgba(0, 0, 0, .2);
+    visibility: hidden; transition: transform .25s ease, visibility 0s linear .25s; }
+  .sheet.on { transform: translate(-50%, 0); visibility: visible; transition: transform .25s ease; }
+  .sheet-h { display: flex; align-items: center; padding: 16px 18px 10px; border-bottom: 1px solid var(--crta); }
+  .sheet-h h2 { font-size: 22px; flex: 1; }
+  .sheet-b { overflow: auto; padding: 8px 18px 24px; }
+  .mcat { font: 700 12px var(--body); letter-spacing: .12em; text-transform: uppercase; color: var(--sivo); margin: 18px 0 6px; }
+  .mitem { display: flex; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--crta-2); }
+  .mitem div { flex: 1; } .mitem b { font-weight: 700; }
+  .mitem .d { font-size: 14px; color: var(--sivo); }
+  .mitem .a { font-size: 12px; color: var(--ulje-tamno); margin-top: 2px; }
+  .mitem .p { font: 700 15px var(--mono); white-space: nowrap; }
+  .hours { width: 100%; border-collapse: collapse; }
+  .hours td { padding: 9px 0; border-bottom: 1px solid var(--crta-2); }
+  .hours td:last-child { text-align: right; font-family: var(--mono); }
+  .hours tr.today td { font-weight: 700; }
+  footer.pw { text-align: center; font-size: 12px; color: var(--sivo); padding: 0 16px 24px; }
+  footer.pw a { color: var(--sivo); }
 </style>
 </head>
 <body>
-<main>
-  <div class="langs"><button data-l="hr">HR</button><button data-l="en">EN</button><button data-l="de">DE</button></div>
-  <h1 id="rname">…</h1>
-  <div class="sub" id="raddr"></div>
+<div class="wrap">
+  <header class="band">
+    <div class="langs" role="group" aria-label="Jezik / Language"><button data-l="hr">HR</button><button data-l="en">EN</button><button data-l="de">DE</button></div>
+    <h1 id="rname">&nbsp;</h1>
+    <div class="addr" id="raddr"></div>
+    <div class="hrow">
+      <button class="hbtn" id="hoursBtn" type="button"><span class="dot" id="openDot"></span><span id="openTxt"></span></button>
+      <button class="hbtn hidden" id="menuBtn" type="button" data-t="menu"></button>
+      <a class="hbtn hidden" id="telBtn"></a>
+    </div>
+  </header>
 
-  <section id="book">
-    <div class="card">
-      <div class="row">
-        <div><label data-t="date"></label><input type="date" id="date"></div>
-        <div><label data-t="guests"></label><select id="party"></select></div>
+  <main>
+    <div id="topMsg"></div>
+
+    <!-- odabir: osobe, dan, zona, vrijeme -->
+    <div id="pick">
+      <section class="sec" style="margin-bottom:14px">
+        <h2 data-t="howMany"></h2>
+        <div class="stepper"><button type="button" id="pMinus" aria-label="−">−</button><output id="party" aria-live="polite">2</output>
+          <button type="button" id="pPlus" aria-label="+">+</button><span class="lbl" id="pLbl"></span></div>
+        <div class="bignote hidden" id="bigNote"></div>
+      </section>
+      <section class="sec" style="margin-bottom:14px">
+        <h2 data-t="when"></h2>
+        <div class="days" id="days"></div>
+        <input type="date" class="in datepick hidden" id="dateIn">
+      </section>
+      <section class="sec hidden" id="zoneSec" style="margin-bottom:14px">
+        <h2 data-t="where"></h2>
+        <div class="zones" id="zones"></div>
+      </section>
+      <section class="sec" id="slotSec">
+        <h2><span data-t="time"></span> <small id="slotDay"></small></h2>
+        <div id="slots"></div>
+      </section>
+    </div>
+
+    <!-- podaci gosta -->
+    <section class="sec hidden" id="details">
+      <h2 data-t="yourDetails"></h2>
+      <form class="details" id="bookForm" novalidate>
+        <label class="field"><span data-t="name"></span><input id="name" autocomplete="name" required></label>
+        <label class="field"><span><span data-t="phone"></span> <span class="hint" data-t="phoneHint"></span></span><input id="phone" type="tel" autocomplete="tel" placeholder="+385 91 …"></label>
+        <label class="field"><span><span data-t="email"></span> <span class="hint" data-t="emailHint"></span></span><input id="email" type="email" autocomplete="email"></label>
+        <label class="field"><span data-t="notes"></span><textarea id="notes" rows="2" maxlength="500"></textarea></label>
+        <input class="hp" id="website" tabindex="-1" autocomplete="off" aria-hidden="true">
+        <div class="ginfo hidden" id="guaranteeInfo"></div>
+        <div id="bookMsg" role="alert"></div>
+        <button class="btn btn-p btn-lg btn-block" id="submit"><span><span data-t="book"></span><span class="submit-sum" id="submitSum"></span></span></button>
+        <p class="privacy" data-t="privacy"></p>
+      </form>
+    </section>
+
+    <!-- potvrda -->
+    <section id="done" class="hidden"></section>
+
+    <!-- pregled, izmjena, otkaz -->
+    <section id="manage" class="hidden">
+      <div class="sec" id="mAsk">
+        <h2><span data-t="reservation"></span> <span class="mono" id="mCodeAsk"></span></h2>
+        <form class="details" id="mForm">
+          <label class="field"><span data-t="contactCheck"></span><input id="mContact" autocomplete="tel" required></label>
+          <div id="mAskMsg" role="alert"></div>
+          <button class="btn btn-p btn-lg btn-block" data-t="show"></button>
+        </form>
       </div>
-      <div id="zoneWrap"><label data-t="zone"></label><select id="zone"></select></div>
-      <label data-t="time"></label>
-      <div class="slots" id="slots"></div>
-      <div class="muted" id="slotsInfo"></div>
-    </div>
+      <div id="mView"></div>
+    </section>
+  </main>
+  <footer class="pw">Opsis Restoran</footer>
+</div>
 
-    <div class="card hidden" id="details">
-      <label data-t="name"></label><input id="name" autocomplete="name">
-      <label data-t="phone"></label><input id="phone" type="tel" autocomplete="tel" placeholder="+385 91 …">
-      <label data-t="email"></label><input id="email" type="email" autocomplete="email">
-      <label data-t="notes"></label><textarea id="notes" rows="2"></textarea>
-      <input class="hp" id="website" tabindex="-1" autocomplete="off">
-      <div class="muted" id="guaranteeInfo"></div>
-      <button class="primary" id="submit" data-t="book"></button>
-      <div id="bookMsg"></div>
-      <p class="muted" data-t="privacy"></p>
-    </div>
-  </section>
-
-  <section id="done" class="hidden card">
-    <div class="msg ok" id="doneMsg" data-t="confirmed"></div>
-    <p data-t="yourCode"></p>
-    <div class="code" id="doneCode"></div>
-    <p class="muted" id="doneWhen"></p>
-  </section>
-
-  <section id="manage" class="hidden card">
-    <p><span data-t="reservation"></span> <b id="mCode"></b></p>
-    <div id="mAsk">
-      <label data-t="contactCheck"></label><input id="mContact">
-      <button class="primary" id="mLoad" data-t="show"></button>
-    </div>
-    <div id="mInfo" class="hidden">
-      <p id="mWhen"></p>
-      <button class="primary" id="mCancel" data-t="cancel"></button>
-    </div>
-    <div id="mMsg"></div>
-  </section>
-</main>
-<script>
-const I18N = {
-  hr: { date:'Datum', guests:'Broj osoba', zone:'Gdje želite sjediti', any:'Svejedno', time:'Vrijeme', name:'Ime i prezime', phone:'Mobitel (za potvrdu na WhatsApp)', email:'Email', notes:'Napomena (alergije, prigoda…)', book:'Rezerviraj', confirmed:'Rezervacija je potvrđena. Potvrdu smo vam poslali porukom.', yourCode:'Vaša šifra rezervacije:', reservation:'Rezervacija', contactCheck:'Za pregled upišite mobitel ili email s rezervacije', show:'Prikaži', cancel:'Otkaži rezervaciju', cancelled:'Rezervacija je otkazana.', noSlots:'Nema slobodnih termina za taj dan. Probajte drugi datum ili nas nazovite.', pick:'Odaberite vrijeme', privacy:'Podatke koristimo samo za vašu rezervaciju.', needContact:'Upišite mobitel ili email.', closedDay:'Taj dan ne radimo.', guarantee:'Za {n}+ osoba tražimo karticu kao garanciju; nedolazak se naplaćuje {fee} po osobi.', redirect:'Preusmjeravamo vas na unos kartice…', guaranteeOk:'Kartica je spremljena, rezervacija potvrđena.', persons:'os.', noMsg:'Rezervacija je potvrđena. Zapišite šifru: poruku s potvrdom ne možemo poslati.', payLink:'Unesite karticu', status:{ pending_guarantee:'čeka karticu', confirmed:'potvrđeno', seated:'u tijeku', completed:'završeno', cancelled:'otkazano', no_show:'nedolazak', expired:'isteklo' }, err:{} },
-  en: { date:'Date', guests:'Guests', zone:'Seating', any:'No preference', time:'Time', name:'Full name', phone:'Mobile (for WhatsApp confirmation)', email:'Email', notes:'Notes (allergies, occasion…)', book:'Book table', confirmed:'Your table is confirmed. We have sent you a confirmation.', yourCode:'Your booking code:', reservation:'Booking', contactCheck:'Enter the mobile or email used for the booking', show:'Show', cancel:'Cancel booking', cancelled:'Your booking has been cancelled.', noSlots:'No tables available that day. Try another date or call us.', pick:'Choose a time', privacy:'We use your data only for this booking.', needContact:'Please enter a mobile number or email.', closedDay:'We are closed that day.', guarantee:'For {n}+ guests we ask for a card guarantee; a no-show fee of {fee} per person applies.', redirect:'Redirecting you to enter your card…', guaranteeOk:'Card saved, booking confirmed.', persons:'guests', noMsg:'Your table is confirmed. Please note the code: we cannot send you a confirmation message.', payLink:'Enter card details', status:{ pending_guarantee:'waiting for card', confirmed:'confirmed', seated:'in progress', completed:'completed', cancelled:'cancelled', no_show:'no-show', expired:'expired' },
-    err:{ name_required:'Please enter your name.', bad_phone:'This phone number is not valid.', bad_email:'This email address is not valid.', contact_required:'Please enter the mobile number or email used for the booking.', bad_datetime:'Invalid date or time.', bad_party:'Please choose the number of guests.', party_too_large:'This group is too large to book online. Please call the restaurant.', in_past:'That time has already passed.', closed:'The restaurant is closed at that time, or it is too late to arrive.', no_table:'No table is available at that time.', reservation_not_found:'Booking not found.', contact_mismatch:'The contact does not match the booking.', not_cancellable:'This booking can no longer be cancelled.', already_started:'The booking time has already started. Please call the restaurant.', rate_limited:'Too many requests. Please try again in a minute.', restaurant_not_found:'Restaurant not found.', internal:'Something went wrong. Please try again or call the restaurant.' } },
-  de: { date:'Datum', guests:'Personen', zone:'Sitzplatz', any:'Egal', time:'Uhrzeit', name:'Vor- und Nachname', phone:'Handy (für WhatsApp-Bestätigung)', email:'E-Mail', notes:'Hinweise (Allergien, Anlass…)', book:'Reservieren', confirmed:'Ihre Reservierung ist bestätigt. Wir haben Ihnen eine Bestätigung geschickt.', yourCode:'Ihr Reservierungscode:', reservation:'Reservierung', contactCheck:'Handy oder E-Mail der Reservierung eingeben', show:'Anzeigen', cancel:'Reservierung stornieren', cancelled:'Ihre Reservierung wurde storniert.', noSlots:'An diesem Tag ist nichts frei. Bitte anderes Datum wählen oder anrufen.', pick:'Uhrzeit wählen', privacy:'Wir verwenden Ihre Daten nur für diese Reservierung.', needContact:'Bitte Handy oder E-Mail angeben.', closedDay:'An diesem Tag geschlossen.', guarantee:'Ab {n} Personen benötigen wir eine Kreditkarte als Garantie; bei Nichterscheinen {fee} pro Person.', redirect:'Weiterleitung zur Karteneingabe…', guaranteeOk:'Karte gespeichert, Reservierung bestätigt.', persons:'Pers.', noMsg:'Ihre Reservierung ist bestätigt. Bitte notieren Sie den Code: Wir können Ihnen keine Bestätigung schicken.', payLink:'Karte eingeben', status:{ pending_guarantee:'wartet auf Karte', confirmed:'bestätigt', seated:'läuft', completed:'abgeschlossen', cancelled:'storniert', no_show:'nicht erschienen', expired:'abgelaufen' },
-    err:{ name_required:'Bitte geben Sie Ihren Namen ein.', bad_phone:'Diese Telefonnummer ist ungültig.', bad_email:'Diese E-Mail-Adresse ist ungültig.', contact_required:'Bitte geben Sie die Handynummer oder E-Mail der Reservierung ein.', bad_datetime:'Ungültiges Datum oder ungültige Uhrzeit.', bad_party:'Bitte wählen Sie die Personenzahl.', party_too_large:'Diese Gruppe ist für die Online-Reservierung zu groß. Bitte rufen Sie das Restaurant an.', in_past:'Diese Uhrzeit ist bereits vorbei.', closed:'Das Restaurant ist zu dieser Zeit geschlossen oder es ist zu spät für die Ankunft.', no_table:'Zu dieser Zeit ist kein Tisch frei.', reservation_not_found:'Reservierung nicht gefunden.', contact_mismatch:'Der Kontakt passt nicht zur Reservierung.', not_cancellable:'Diese Reservierung kann nicht mehr storniert werden.', already_started:'Die Reservierungszeit hat bereits begonnen. Bitte rufen Sie das Restaurant an.', rate_limited:'Zu viele Anfragen. Bitte versuchen Sie es in einer Minute erneut.', restaurant_not_found:'Restaurant nicht gefunden.', internal:'Etwas ist schiefgelaufen. Bitte versuchen Sie es erneut oder rufen Sie das Restaurant an.' } },
-};
-const slug = location.pathname.split('/').filter(Boolean)[1];
-const q = new URLSearchParams(location.search);
-let L = (q.get('lang') || navigator.language || 'hr').slice(0, 2); if (!I18N[L]) L = 'en';
-let R = null, chosen = null;
-const $ = (id) => document.getElementById(id);
-const t = (k) => I18N[L][k] || k;
-function applyLang() {
-  document.documentElement.lang = L;
-  document.querySelectorAll('[data-t]').forEach((el) => el.textContent = t(el.dataset.t));
-  document.querySelectorAll('.langs button').forEach((b) => b.classList.toggle('on', b.dataset.l === L));
-  if (R) renderGuarantee();
-}
-document.querySelectorAll('.langs button').forEach((b) => b.onclick = () => { L = b.dataset.l; applyLang(); fillZones(); });
-// server javlja greške na hrvatskom; gostu na njegovom jeziku po šifri greške
-const errText = (e) => (I18N[L].err && I18N[L].err[e.error]) || e.message;
-const fmtDay = (d) => { const [y, m, day] = d.split('-'); return L === 'en' ? `${day}/${m}/${y}` : `${Number(day)}.${Number(m)}.${y}.`; };
-function msg(el, text, ok) { $(el).innerHTML = text ? `<div class="msg ${ok ? 'ok' : 'err'}">${text.replace(/</g,'&lt;')}</div>` : ''; }
-async function api(path, opts = {}) {
-  const res = await fetch(path, { ...opts, headers: { 'Content-Type': 'application/json' } });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw Object.assign(new Error(data.message || t('noSlots')), data);
-  return data;
-}
-function fillZones() {
-  if (!R) return;
-  $('zoneWrap').classList.toggle('hidden', R.zones.length < 2);
-  $('zone').innerHTML = `<option value="">${t('any')}</option>` + R.zones.map((z) => `<option>${String(z).replace(/</g,'&lt;')}</option>`).join('');
-}
-function renderGuarantee() {
-  const g = R.guarantee, n = Number($('party').value);
-  $('guaranteeInfo').textContent = g && n >= g.min_party ? t('guarantee').replace('{n}', g.min_party).replace('{fee}', (g.fee_cents / 100).toFixed(2).replace('.', ',') + ' €') : '';
-}
-async function loadSlots() {
-  chosen = null; $('details').classList.add('hidden'); $('slots').innerHTML = ''; $('slotsInfo').textContent = '…';
-  renderGuarantee();
-  try {
-    const d = await api(`/api/r/${slug}/availability?date=${$('date').value}&party=${$('party').value}&zone=${encodeURIComponent($('zone').value)}`);
-    $('slotsInfo').textContent = d.slots.length ? '' : (R.closed_dates.includes($('date').value) ? t('closedDay') : t('noSlots'));
-    for (const s of d.slots) {
-      const b = document.createElement('button'); b.className = 'slot'; b.textContent = s.time;
-      b.onclick = () => { chosen = s; document.querySelectorAll('.slot').forEach((x) => x.classList.remove('sel')); b.classList.add('sel'); $('details').classList.remove('hidden'); };
-      $('slots').appendChild(b);
-    }
-  } catch (e) { $('slotsInfo').textContent = errText(e); }
-}
-async function submit() {
-  msg('bookMsg', '');
-  if (!chosen) return msg('bookMsg', t('pick'));
-  if (!$('phone').value.trim() && !$('email').value.trim()) return msg('bookMsg', t('needContact'));
-  $('submit').disabled = true;
-  try {
-    const d = await api(`/api/r/${slug}/reservations`, { method: 'POST', body: JSON.stringify({
-      name: $('name').value, phone: $('phone').value, email: $('email').value, notes: $('notes').value, website: $('website').value,
-      partySize: Number($('party').value), date: chosen.date, time: chosen.time, zone: $('zone').value || undefined, language: L,
-    }) });
-    if (d.guaranteeUrl) return openCheckout(d.guaranteeUrl);
-    $('book').classList.add('hidden'); $('done').classList.remove('hidden');
-    if (!d.notified.length) { $('doneMsg').dataset.t = 'noMsg'; $('doneMsg').textContent = t('noMsg'); }
-    $('doneCode').textContent = d.code; $('doneWhen').textContent = `${fmtDay(d.date)} · ${d.time} · ${$('party').value} ${t('persons')}`;
-    parent.postMessage({ type: 'opsis:booked', code: d.code }, '*');
-  } catch (e) {
-    let text = errText(e);
-    if (e.alternatives && e.alternatives.length) text += ' → ' + e.alternatives.slice(0, 6).map((a) => a.time).join(', ');
-    msg('bookMsg', text);
-  } finally { $('submit').disabled = false; }
-}
-// Stripe se ne otvara unutar okvira (widget na webu restorana): tada vodimo cijelu stranicu, a ako preglednik to blokira, ostaje gumb
-function openCheckout(url) {
-  msg('bookMsg', t('redirect'), true);
-  const a = document.createElement('a');
-  a.href = url; a.target = '_top'; a.className = 'primary pay'; a.textContent = t('payLink');
-  $('bookMsg').appendChild(a);
-  if (window.top === window) { location.href = url; return; }
-  try { window.top.location.href = url; } catch {}
-}
-async function manage(code) {
-  $('book').classList.add('hidden'); $('manage').classList.remove('hidden'); $('mCode').textContent = code;
-  if (q.get('guarantee') === 'ok') msg('mMsg', t('guaranteeOk'), true);
-  $('mLoad').onclick = async () => {
-    try {
-      const d = await api(`/api/r/${slug}/reservations/${code}?contact=${encodeURIComponent($('mContact').value)}`);
-      $('mAsk').classList.add('hidden'); $('mInfo').classList.remove('hidden');
-      $('mWhen').textContent = `${fmtDay(d.date)} · ${d.time} · ${d.party_size} ${t('persons')} · ${t('status')[d.status] || d.status}`;
-      msg('mMsg', '');
-      $('mCancel').classList.toggle('hidden', !['confirmed', 'pending_guarantee'].includes(d.status));
-    } catch (e) { msg('mMsg', errText(e)); }
-  };
-  $('mCancel').onclick = async () => {
-    try { await api(`/api/r/${slug}/reservations/${code}/cancel`, { method: 'POST', body: JSON.stringify({ contact: $('mContact').value }) });
-      $('mInfo').classList.add('hidden'); msg('mMsg', t('cancelled'), true);
-    } catch (e) { msg('mMsg', errText(e)); }
-  };
-}
-(async function init() {
-  applyLang();
-  try { R = await api(`/api/r/${slug}`); } catch (e) { document.querySelector('main').textContent = errText(e); return; }
-  document.title = R.name; $('rname').textContent = R.name; $('raddr').textContent = [R.address, R.phone].filter(Boolean).join(' · ');
-  $('party').innerHTML = Array.from({ length: R.max_party_size }, (_, i) => `<option ${i === 1 ? 'selected' : ''}>${i + 1}</option>`).join('');
-  const today = new Date(); today.setMinutes(today.getMinutes() - today.getTimezoneOffset());
-  $('date').value = today.toISOString().slice(0, 10); $('date').min = $('date').value;
-  fillZones(); renderGuarantee();
-  if (q.get('code')) return manage(q.get('code'));
-  ['date', 'party', 'zone'].forEach((id) => $(id).onchange = loadSlots);
-  $('submit').onclick = submit;
-  loadSlots();
-})();
-</script>
+<div class="sheet-bg" id="sheetBg"></div>
+<div class="sheet" id="sheet" role="dialog" aria-modal="true" aria-labelledby="sheetTitle">
+  <div class="sheet-h"><h2 id="sheetTitle"></h2><button class="btn btn-ghost btn-s" id="sheetClose" aria-label="✕">✕</button></div>
+  <div class="sheet-b" id="sheetBody"></div>
+</div>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+<script src="/static/book.js"></script>
 </body>
 </html>

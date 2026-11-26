@@ -276,8 +276,9 @@ export async function modifyReservation(
       )
     ).rows[0];
   });
-  await notify(db, deps, r, updated, 'modified');
-  return updated;
+  // kanali na koje je otišla obavijest o izmjeni (prazno = gostu se nema kamo poslati)
+  const notified = await notify(db, deps, r, updated, 'modified');
+  return Object.assign(updated, { notified });
 }
 
 /** Stripe webhook: gost je ostavio karticu → rezervacija potvrđena. */
