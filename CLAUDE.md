@@ -16,6 +16,8 @@ Projekt: Opsis Restoran — multi-tenant sustav za restorane (rezervacije, AI ch
 - SMS plaća Opsis: uključuje ga samo super admin (`sms_mode`), nikad vlasnik restorana iz panela.
 - Bot traži rezervacije po broju samo kad je broj potvrđen (WhatsApp, poziv). Na web chatu i Instagramu traži se šifra.
 - Rad ide na granu (npr. `rad/...`), ne izravno na `main`. GitHub repo je javan: nikad ne commitaj `.env` ni ključeve.
+- Izgled: zajednički tokeni i fontovi u `public/opsis.css` (fontovi su lokalni u `public/fonts`, bez Google Fontsa zbog GDPR-a). Panel je `admin.html` + `admin.js`, gost `book.html` + `book.js`, QR meni `menu.html` + `menu.js`.
+- Tekstovi za goste na stranicama (book.js, menu.js, chat.js, widget.js) uvijek na hr/en/de. Gostu se ne piše da je poruka poslana ako `notified` kaže da nije.
 
 ## Sljedeći zadaci (po prioritetu)
 1. Deploy: kod je spreman ([docs/deploy-hostinger.md](docs/deploy-hostinger.md)). Čeka se da Franko kupi Hostinger VPS (26. 11. 2026.), napravi Supabase projekt i DNS zapis `restoran` na Namecheapu.
@@ -25,4 +27,4 @@ Projekt: Opsis Restoran — multi-tenant sustav za restorane (rezervacije, AI ch
 
 Otvorene poslovne odluke: rok besplatnog otkaza, garancija kad gost izmjenom poveća broj osoba.
 
-Gotovo: Stripe Connect onboarding iz panela, spojeni stolovi, ključevi za osoblje (owner/staff), GDPR brisanje, integracije preko super admina, Retell potpis, priprema za deploy (Docker, TLS, RLS, CORS, provjera .env), SMS preko Infobipa.
+Gotovo: novi panel (raspored stolova, gosti, statistika, ispis), nove stranice za goste (rezervacija s izmjenom, QR meni s alergenima, chat), Stripe Connect onboarding iz panela, spojeni stolovi, ključevi za osoblje (owner/staff), GDPR brisanje, integracije preko super admina, Retell potpis, priprema za deploy (Docker, TLS, RLS, CORS, provjera .env), SMS preko Infobipa.

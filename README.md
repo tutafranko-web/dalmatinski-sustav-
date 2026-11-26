@@ -9,14 +9,14 @@ Jedan server služi više restorana (svaki ima svoj `slug` i ključ za panel).
 | Dio | Status |
 |---|---|
 | Rezervacije: stolovi, zone, radno vrijeme (i iza ponoći), zatvoreni dani, dodjela najmanjeg stola, zaštita od dvostrukog bukiranja | ✅ testirano |
-| Stranica za rezervaciju `/b/SLUG` (HR/EN/DE) + gumb za web restorana (`widget.js`) | ✅ testirano u pregledniku |
-| Pregled i otkaz rezervacije za gosta (šifra + mobitel/email) | ✅ |
+| Stranica za rezervaciju `/b/SLUG` (HR/EN/DE): dani kao kartice, prvi slobodan termin kad je dan pun, potvrda sa šifrom, dodavanje u kalendar, meni i radno vrijeme; gumb za web restorana (`widget.js`, boja restorana kroz `data-color`) | ✅ testirano u pregledniku |
+| Gost sam pregleda, promijeni ili otkaže rezervaciju (šifra + mobitel/email) | ✅ testirano u pregledniku |
 | Potvrde, izmjene, otkazi, podsjetnik 24 h prije (WhatsApp predlošci + email) | ✅ testirano s lažnim slanjem |
 | SMS (Infobip) kad WhatsApp nije moguć ili ne prođe; zaštita od troška (zemlje, limiti) | ✅ testirano s lažnim slanjem, [upute](docs/sms-infobip.md) |
 | Ponovni pokušaj slanja s razmakom (1, 5, 15, 60 min) | ✅ testirano |
 | Upit za Google recenziju: konobar u panelu odobri gosta (⭐ Traži recenziju / Ne), poruka ide 2 h nakon posjeta; u postavkama može i automatski ili isključeno | ✅ testirano |
 | Garancija karticom (Stripe Connect, setup mode), istek nakon 30 min, naplata no-showa | ✅ testirano s lažnim Stripeom |
-| AI chatbot (Claude + alati) na webu (`chat.js`), WhatsAppu i Instagramu | ✅ testirano s lažnim modelom |
+| AI chatbot (Claude + alati) na webu (`chat.js`, brza pitanja, pamti razgovor; skriven dok AI nije podešen), WhatsAppu i Instagramu | ✅ testirano s lažnim modelom |
 | Voice agent: Retell custom funkcije + inbound webhook + provjera Retell potpisa (format provjeren u njihovoj dokumentaciji) | ✅ testirano bez pravog poziva |
 | Spojeni stolovi za veće grupe (rezervacija spojenih blokira sve njihove stolove) | ✅ testirano |
 | Ključevi za osoblje: vlasnik vs konobar (konobar ne mijenja meni/stolove/postavke), opoziv ključa | ✅ testirano |
@@ -24,8 +24,9 @@ Jedan server služi više restorana (svaki ima svoj `slug` i ključ za panel).
 | Stripe Connect: vlasnik u panelu klikne "Spoji Stripe" i prođe onboarding | ✅ testirano s lažnim Stripeom |
 | Spajanje WhatsApp/Instagram/Stripe ID-jeva i SMS-a za restoran (`PUT /api/super/restaurants/SLUG/integrations`) | ✅ testirano |
 | Produkcijski način: pravi Postgres 17, TLS prema bazi, RLS, provjera `.env` pri startu, uredno gašenje | ✅ provjereno lokalno na Postgresu 17 (Docker nije probran) |
-| Panel za restoran `/admin`: rezervacije, narudžbe (zvuk), meni, stolovi + QR linkovi, postavke, statistika | ✅ testirano u pregledniku |
-| QR meni po stolu `/m/TOKEN`: narudžba, poziv konobara, račun, 14 EU alergena | ✅ testirano u pregledniku |
+| Panel za restoran `/admin`: raspored stolova po satima, popis i pretraga, detalji rezervacije (status, promjena termina, premještanje stola, napomene), gost bez rezervacije, ispis liste za večer, obavijest o novoj online rezervaciji | ✅ testirano u pregledniku |
+| Panel: gosti s oznakama (VIP, alergije) i bilješkama, narudžbe s vremenom čekanja, meni s opisima i redoslijedom, stolovi s QR kodovima i ispisom kartica, statistika s grafovima, uređivač radnog vremena | ✅ testirano u pregledniku |
+| QR meni po stolu `/m/TOKEN`: narudžba s košaricom, poziv konobara, račun, skrivanje jela po alergenima, alergeni i kategorije na jeziku gosta | ✅ testirano u pregledniku |
 | Fiskalizacija (ZKI, potpis, CIS, naknadna dostava) | ⚠️ testirano lokalno, **nije** testirano na CIS demo okolini |
 
 **Nije isprobano s pravim servisima** (treba tvoje ključeve): Anthropic, Retell, Meta/WhatsApp, Stripe, SMTP, CIS.
@@ -37,10 +38,13 @@ npm install
 npm start            # bez DATABASE_URL koristi bazu u memoriji + demo restoran
 ```
 
+- Početna s linkovima na demo: http://localhost:3000/
 - Rezervacija: http://localhost:3000/b/demo-konoba
 - Panel: http://localhost:3000/admin (oznaka `demo-konoba`, ključ `demo-key`)
 - QR meni: http://localhost:3000/m/demo-qr-3
-- Testovi: `npm test` (79 testova) · provjera tipova: `npm run typecheck`
+- Testovi: `npm test` (92 testa) · provjera tipova: `npm run typecheck`
+
+Demo restoran ima današnje rezervacije oko trenutnog vremena, 30 dana povijesti za statistiku i par otvorenih narudžbi, pa je dobar za prezentacije. Imena i brojevi su izmišljeni.
 
 ## Produkcija (Hostinger VPS + Supabase)
 
