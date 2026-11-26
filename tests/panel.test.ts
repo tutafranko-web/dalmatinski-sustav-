@@ -198,3 +198,30 @@ describe('statistika i QR', () => {
     expect((await app.inject({ url: '/qr/b/nema' })).statusCode).toBe(404);
   });
 });
+
+describe('demo restoran', () => {
+  it('ima današnje rezervacije, povijest i nijedan stol nije dvaput zauzet', async () => {
+    const { db } = await setup();
+    const { seedDemo } = await import('../src/demo.js');
+    const now = new Date('2026-07-10T17:10:00Z'); // 19:10 u Splitu
+    await seedDemo(db, now);
+    await seedDemo(db, now); // drugi put ne radi ništa
+    const r = (await db.query(`select id from restaurants where slug = 'demo-konoba'`)).rows;
+    expect(r).toHaveLength(1);
+    const today = (await db.query(`select status, count(*)::int as n from reservations where restaurant_id = $1
+      and start_at >= '2026-07-09T22:00:00Z' and start_at < '2026-07-10T22:00:00Z' group by status`, [r[0].id])).rows;
+    const by = Object.fromEntries(today.map((x: any) => [x.status, x.n]));
+    expect(by.seated).toBeGreaterThan(0);
+    expect(by.confirmed).toBeGreaterThan(0);
+    expect(by.completed).toBeGreaterThan(0);
+    // isti fizički stol (i dijelovi spojenog) nikad u dvije aktivne rezervacije istovremeno
+    const clash = (await db.query(`
+      with x as (select res.id, res.start_at, res.end_at, unnest(coalesce(t.combo_of, array[t.id])) as phys
+                   from reservations res join dining_tables t on t.id = res.table_id
+                  where res.restaurant_id = $1 and res.status not in ('cancelled','expired'))
+      select count(*)::int as n from x a join x b on a.phys = b.phys and a.id < b.id and a.start_at < b.end_at and b.start_at < a.end_at`, [r[0].id])).rows[0].n;
+    expect(clash).toBe(0);
+    const hist = (await db.query(`select count(*)::int as n from reservations where restaurant_id = $1 and start_at < '2026-07-09T22:00:00Z'`, [r[0].id])).rows[0].n;
+    expect(hist).toBeGreaterThan(100);
+  });
+});

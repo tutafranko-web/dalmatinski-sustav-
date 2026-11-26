@@ -1,0 +1,113 @@
+/* Opsis Restoran: zajednički izgled (panel, rezervacija, QR meni).
+   Boje: zelene škure, bijeli kamen, maslinovo ulje i more. Fontovi su lokalni (bez Google Fontsa, zbog GDPR-a). */
+
+@font-face { font-family: 'Zilla Slab'; font-style: normal; font-weight: 600; font-display: swap;
+  src: url(fonts/zilla-slab-latin-ext-600-normal.woff2) format('woff2');
+  unicode-range: U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF; }
+@font-face { font-family: 'Zilla Slab'; font-style: normal; font-weight: 600; font-display: swap;
+  src: url(fonts/zilla-slab-latin-600-normal.woff2) format('woff2');
+  unicode-range: U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD; }
+@font-face { font-family: 'Zilla Slab'; font-style: normal; font-weight: 700; font-display: swap;
+  src: url(fonts/zilla-slab-latin-ext-700-normal.woff2) format('woff2');
+  unicode-range: U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF; }
+@font-face { font-family: 'Zilla Slab'; font-style: normal; font-weight: 700; font-display: swap;
+  src: url(fonts/zilla-slab-latin-700-normal.woff2) format('woff2');
+  unicode-range: U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD; }
+@font-face { font-family: 'Atkinson Hyperlegible Next'; font-style: normal; font-weight: 200 800; font-display: swap;
+  src: url(fonts/atkinson-hyperlegible-next-latin-ext-wght-normal.woff2) format('woff2-variations');
+  unicode-range: U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF; }
+@font-face { font-family: 'Atkinson Hyperlegible Next'; font-style: normal; font-weight: 200 800; font-display: swap;
+  src: url(fonts/atkinson-hyperlegible-next-latin-wght-normal.woff2) format('woff2-variations');
+  unicode-range: U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD; }
+@font-face { font-family: 'Atkinson Hyperlegible Mono'; font-style: normal; font-weight: 200 800; font-display: swap;
+  src: url(fonts/atkinson-hyperlegible-mono-latin-ext-wght-normal.woff2) format('woff2-variations');
+  unicode-range: U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF; }
+@font-face { font-family: 'Atkinson Hyperlegible Mono'; font-style: normal; font-weight: 200 800; font-display: swap;
+  src: url(fonts/atkinson-hyperlegible-mono-latin-wght-normal.woff2) format('woff2-variations');
+  unicode-range: U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD; }
+
+:root {
+  /* škure: zelena boja dalmatinskih drvenih kapaka */
+  --skura: #1e4d43; --skura-2: #2b6658; --skura-3: #143a32;
+  /* kamen i vapno: pozadina i papir */
+  --kamen: #ecede8; --vapno: #fbfbf9; --tinta: #17221f; --sivo: #5b6863; --crta: #d3d8cf; --crta-2: #e4e7e0;
+  /* maslinovo ulje: oznaka "sada" i ono što traži pažnju */
+  --ulje: #c99a1e; --ulje-svj: #f7edcf; --ulje-tamno: #7a5c08;
+  /* more: potvrđeno */
+  --more: #2b6c8f; --more-svj: #e1edf4;
+  --crveno: #b3261e; --crveno-svj: #fbe8e6;
+  --zeleno-svj: #e1efe8;
+  --display: 'Zilla Slab', Rockwell, 'Roboto Slab', Georgia, serif;
+  --body: 'Atkinson Hyperlegible Next', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --mono: 'Atkinson Hyperlegible Mono', ui-monospace, 'Cascadia Mono', Consolas, monospace;
+  --r: 10px; --r-s: 7px;
+  --sjena: 0 1px 2px rgba(23, 34, 31, .06), 0 6px 18px rgba(23, 34, 31, .07);
+  /* lamele škura: tamna crta sjene i svijetla crta ruba na svakih 9 px */
+  --lamele: repeating-linear-gradient(180deg, var(--skura) 0 7px, var(--skura-3) 7px 8px, var(--skura-2) 8px 9px);
+  color-scheme: light;
+}
+
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body { margin: 0; font: 16px/1.45 var(--body); color: var(--tinta); background: var(--kamen); }
+h1, h2, h3 { font-family: var(--display); font-weight: 700; line-height: 1.1; margin: 0; letter-spacing: -.005em; }
+.mono, .num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+a { color: var(--skura); }
+.hidden { display: none !important; }
+.muted { color: var(--sivo); }
+.small { font-size: 13px; }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+:focus-visible { outline: 3px solid var(--ulje); outline-offset: 2px; border-radius: 4px; }
+
+/* gumbi */
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 40px; padding: 8px 14px;
+  border: 1px solid var(--crta); border-radius: var(--r-s); background: var(--vapno); color: var(--tinta);
+  font: 600 14px/1.1 var(--body); cursor: pointer; text-decoration: none; white-space: nowrap; }
+.btn:hover { border-color: var(--sivo); }
+.btn:disabled { opacity: .5; cursor: default; }
+.btn-p { background: var(--skura); border-color: var(--skura); color: #fff; }
+.btn-p:hover { background: var(--skura-3); border-color: var(--skura-3); }
+.btn-ghost { background: transparent; border-color: transparent; }
+.btn-ghost:hover { background: rgba(23, 34, 31, .06); border-color: transparent; }
+.btn-danger { color: var(--crveno); }
+.btn-danger:hover { border-color: var(--crveno); }
+.btn-s { min-height: 32px; padding: 5px 10px; font-size: 13px; }
+.btn-lg { min-height: 52px; padding: 12px 20px; font-size: 16px; border-radius: var(--r); }
+.btn-block { width: 100%; }
+
+/* polja */
+input, select, textarea { font: inherit; color: inherit; }
+.in, .field input, .field select, .field textarea { width: 100%; min-height: 42px; padding: 9px 11px; border: 1px solid var(--crta);
+  border-radius: var(--r-s); background: #fff; }
+.in:focus, .field input:focus, .field select:focus, .field textarea:focus { outline: none; border-color: var(--skura); box-shadow: 0 0 0 3px rgba(30, 77, 67, .18); }
+.field { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+.field > span { font-size: 13px; font-weight: 600; color: var(--sivo); }
+.field .hint { font-size: 12px; font-weight: 400; color: var(--sivo); }
+
+/* oznake statusa i kategorija */
+.pill { display: inline-flex; align-items: center; gap: 5px; padding: 2px 9px; border-radius: 999px; font: 600 12px/1.6 var(--body);
+  background: var(--crta-2); color: var(--tinta); white-space: nowrap; }
+.pill::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: currentColor; opacity: .85; }
+.pill.plain::before { display: none; }
+.pill.st-confirmed { background: var(--more-svj); color: var(--more); }
+.pill.st-pending_guarantee { background: var(--ulje-svj); color: var(--ulje-tamno); }
+.pill.st-seated { background: var(--skura); color: #fff; }
+.pill.st-completed, .pill.st-cancelled, .pill.st-expired { background: var(--crta-2); color: var(--sivo); }
+.pill.st-no_show { background: var(--crveno-svj); color: var(--crveno); }
+.chip { display: inline-flex; align-items: center; gap: 4px; padding: 1px 8px; border: 1px solid var(--crta); border-radius: 999px;
+  font-size: 12px; font-weight: 600; background: var(--vapno); white-space: nowrap; }
+.chip.vip { border-color: var(--ulje); background: var(--ulje-svj); color: var(--ulje-tamno); }
+
+.card { background: var(--vapno); border: 1px solid var(--crta); border-radius: var(--r); }
+
+/* obavijest na dnu ekrana */
+.toast { position: fixed; left: 50%; bottom: 24px; transform: translate(-50%, 20px); opacity: 0; pointer-events: none; z-index: 100;
+  max-width: min(520px, calc(100vw - 32px)); padding: 12px 16px; border-radius: var(--r); background: var(--tinta); color: #fff;
+  font-weight: 600; box-shadow: var(--sjena); transition: opacity .2s, transform .2s; }
+.toast.on { opacity: 1; transform: translate(-50%, 0); }
+.toast.err { background: var(--crveno); }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { transition-duration: .01ms !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; scroll-behavior: auto !important; }
+}

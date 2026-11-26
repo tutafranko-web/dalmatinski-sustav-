@@ -115,6 +115,7 @@ export async function buildApp(db: Db, deps: Deps, opts: AppOptions = {}): Promi
     return reply.redirect(url, 302);
   });
   app.get('/admin', (_req: any, reply: any) => reply.sendFile('admin.html'));
+  app.get('/favicon.ico', (_req: any, reply: any) => reply.redirect('/static/favicon.svg', 301));
   app.get('/widget.js', (_req: any, reply: any) => reply.type('application/javascript').sendFile('widget.js'));
   // QR kodovi za ispis: meni po stolu i link za rezervaciju (sadrže samo javne adrese)
   const svg = (reply: any, body: string) => reply.type('image/svg+xml').header('cache-control', 'public, max-age=86400').send(body);
