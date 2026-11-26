@@ -2,7 +2,7 @@
 import Stripe from 'stripe';
 import nodemailer from 'nodemailer';
 import Anthropic from '@anthropic-ai/sdk';
-import type { LLM, Payments, Transport } from './deps.js';
+import type { Billing, LLM, MetaOnboarding, Payments, Transport } from './deps.js';
 
 /**
  * Stripe Connect: novac ide izravno restoranu (restaurant.stripe_account_id),
@@ -69,8 +69,80 @@ export async function readSetupSession(secretKey: string, event: any): Promise<{
   return { sessionId: session.id, paymentMethodId: String(si.payment_method), customerId: session.customer ?? null };
 }
 
-export function verifyStripeEvent(secretKey: string, webhookSecret: string, rawBody: string | Buffer, signature: string) {
-  return new Stripe(secretKey).webhooks.constructEvent(rawBody, signature, webhookSecret);
+/** Provjera potpisa; probaju se svi zadani secreti (tvoj račun + Connect endpoint imaju različite). */
+export function verifyStripeEvent(secretKey: string, webhookSecrets: string[], rawBody: string | Buffer, signature: string) {
+  const stripe = new Stripe(secretKey);
+  let last: unknown;
+  for (const secret of webhookSecrets.filter(Boolean)) {
+    try {
+      return stripe.webhooks.constructEvent(rawBody, signature, secret);
+    } catch (e) {
+      last = e;
+    }
+  }
+  throw last ?? new Error('Nema STRIPE_WEBHOOK_SECRET');
+}
+
+/** Pretplata restorana na TVOM Stripe računu (cijena = STRIPE_PRICE_ID, npr. 100 € mjesečno). */
+export function stripeBilling(secretKey: string, opts: { priceId: string; trialDays: number; automaticTax: boolean }): Billing {
+  const stripe = new Stripe(secretKey);
+  return {
+    async createSubscriptionCheckout({ restaurantId, email, restaurantName, successUrl, cancelUrl }) {
+      const s = await stripe.checkout.sessions.create({
+        mode: 'subscription',
+        line_items: [{ price: opts.priceId, quantity: 1 }],
+        customer_email: email,
+        client_reference_id: String(restaurantId),
+        metadata: { restaurant_id: String(restaurantId), kind: 'signup' },
+        subscription_data: {
+          metadata: { restaurant_id: String(restaurantId), restaurant_name: restaurantName },
+          ...(opts.trialDays > 0 ? { trial_period_days: opts.trialDays } : {}),
+        },
+        allow_promotion_codes: true,
+        billing_address_collection: 'required',
+        tax_id_collection: { enabled: true },
+        automatic_tax: { enabled: opts.automaticTax },
+        success_url: successUrl,
+        cancel_url: cancelUrl,
+      });
+      return { id: s.id, url: s.url! };
+    },
+    async addInvoiceItem({ customerId, amountCents, description }) {
+      await stripe.invoiceItems.create({ customer: customerId, amount: amountCents, currency: 'eur', description });
+    },
+    async createPortalLink({ customerId, returnUrl }) {
+      return (await stripe.billingPortal.sessions.create({ customer: customerId, return_url: returnUrl })).url;
+    },
+  };
+}
+
+/** Meta Tech Provider: razmjena koda iz Embedded Signupa, pretplata na WABA, registracija broja. */
+export function metaOnboarding(env: { appId: string; appSecret: string; graphVersion?: string }): MetaOnboarding {
+  const graph = `https://graph.facebook.com/${env.graphVersion ?? 'v21.0'}`;
+  async function call(method: string, url: string, token?: string, body?: unknown) {
+    const res = await fetch(url, {
+      method,
+      headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    const text = await res.text();
+    if (!res.ok) throw new Error(`Meta ${res.status}: ${text}`);
+    return text ? JSON.parse(text) : {};
+  }
+  return {
+    async exchangeCode(code) {
+      const q = new URLSearchParams({ client_id: env.appId, client_secret: env.appSecret, code });
+      const d = await call('GET', `${graph}/oauth/access_token?${q}`);
+      if (!d.access_token) throw new Error('Meta nije vratila token');
+      return d.access_token;
+    },
+    async subscribeApp(wabaId, token) {
+      await call('POST', `${graph}/${wabaId}/subscribed_apps`, token);
+    },
+    async registerNumber(phoneNumberId, token, pin) {
+      await call('POST', `${graph}/${phoneNumberId}/register`, token, { messaging_product: 'whatsapp', pin });
+    },
+  };
 }
 
 export function realTransport(env: {
@@ -78,11 +150,12 @@ export function realTransport(env: {
 }): Transport {
   const mailer = env.smtpUrl ? nodemailer.createTransport(env.smtpUrl) : null;
   const graph = `https://graph.facebook.com/${env.graphVersion ?? 'v21.0'}`;
-  async function graphPost(path: string, body: unknown) {
-    if (!env.metaAccessToken) throw new Error('META_ACCESS_TOKEN nije postavljen');
+  async function graphPost(path: string, body: unknown, token?: string | null) {
+    const t = token || env.metaAccessToken;
+    if (!t) throw new Error('Nema WhatsApp tokena (spojite WhatsApp u panelu ili postavite META_ACCESS_TOKEN)');
     const res = await fetch(`${graph}/${path}`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${env.metaAccessToken}` },
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${t}` },
       body: JSON.stringify(body),
     });
     if (!res.ok) throw new Error(`Meta ${res.status}: ${await res.text()}`);
@@ -92,7 +165,7 @@ export function realTransport(env: {
       if (!mailer) throw new Error('SMTP_URL nije postavljen');
       await mailer.sendMail({ from: env.mailFrom, to, subject, text, replyTo: replyTo ?? undefined });
     },
-    async sendWhatsApp({ phoneNumberId, to, body }) {
+    async sendWhatsApp({ phoneNumberId, to, body, token }) {
       const payload =
         body.type === 'text'
           ? { messaging_product: 'whatsapp', to: to.replace('+', ''), type: 'text', text: { body: body.text } }
@@ -106,7 +179,7 @@ export function realTransport(env: {
                 components: [{ type: 'body', parameters: body.params.map((t) => ({ type: 'text', text: t })) }],
               },
             };
-      await graphPost(`${phoneNumberId}/messages`, payload);
+      await graphPost(`${phoneNumberId}/messages`, payload, token);
     },
     async sendInstagram({ igAccountId, recipientId, text }) {
       await graphPost(`${igAccountId}/messages`, { recipient: { id: recipientId }, message: { text } });

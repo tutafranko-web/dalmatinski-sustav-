@@ -9,7 +9,10 @@ import { findAvailability, getRestaurantBySlug } from './services/availability.j
 import {
   cancelReservation, createReservation, getByCode, listForDay, modifyReservation, setStatus, verifyGuest, confirmGuarantee, decideReview, normalizePhone,
 } from './services/reservations.js';
-import { AppError, type Restaurant } from './services/types.js';
+import { AppError, isServiceActive, type Restaurant } from './services/types.js';
+import { billOverages, handleBillingEvent, signup, voiceMinutes } from './services/billing.js';
+import { importNumber, recordCall, restaurantByVoiceNumber } from './services/voice.js';
+import { connectWhatsApp } from './services/whatsapp.js';
 import { utcToLocal } from './time.js';
 import { runChat } from './ai/chatbot.js';
 import { executeTool } from './ai/tools.js';
@@ -25,7 +28,16 @@ declare module 'fastify' {
 
 export interface AppOptions {
   /** Stripe: provjera potpisa i čitanje setup sessiona (null = webhook isključen). */
-  stripeWebhook?: ((rawBody: string, signature: string) => Promise<{ sessionId: string; paymentMethodId: string; customerId: string | null } | null>) | null;
+  /** Provjera potpisa Stripe webhooka → event (null = Stripe isključen). */
+  verifyStripe?: ((rawBody: string, signature: string) => Promise<any>) | null;
+  /** Za checkout u "setup" modu (garancija karticom) dohvati spremljenu karticu. */
+  resolveSetupSession?: ((event: any) => Promise<{ sessionId: string; paymentMethodId: string; customerId: string | null } | null>) | null;
+  /** Retell: postavke za automatski uvoz broja restorana. */
+  retell?: { apiKey: string; agentId: string; terminationUri: string; sipUsername?: string; sipPassword?: string } | null;
+  metaAppId?: string;
+  /** samo za testove: lažni fetch prema Retellu */
+  fetchImpl?: typeof fetch;
+  metaConfigId?: string;
   cisSender?: CisSender | null;
   logger?: boolean;
 }
@@ -82,7 +94,15 @@ export async function buildApp(db: Db, deps: Deps, opts: AppOptions = {}): Promi
   const bookLimit = rateLimiter(10, 60_000);
   const orderLimit = rateLimiter(20, 60_000);
 
+  /** Javne rute rade samo dok je pretplata restorana aktivna. */
+  async function publicRestaurant(slug: string): Promise<Restaurant> {
+    const r = await getRestaurantBySlug(db, slug);
+    if (!isServiceActive(r)) throw new AppError(402, 'subscription_inactive', 'Online rezervacije trenutno nisu dostupne. Molimo nazovite restoran.');
+    return r;
+  }
+
   // ---------- stranice ----------
+  app.get('/start', (_req: any, reply: any) => reply.sendFile('start.html'));
   app.get('/health', async () => ({ ok: true }));
   app.get('/b/:slug', (_req: any, reply: any) => reply.sendFile('book.html'));
   app.get('/m/:token', (_req: any, reply: any) => reply.sendFile('menu.html'));
@@ -92,7 +112,7 @@ export async function buildApp(db: Db, deps: Deps, opts: AppOptions = {}): Promi
 
   // ---------- javni API ----------
   app.get('/api/r/:slug', async (req: any) => {
-    const r = await getRestaurantBySlug(db, req.params.slug);
+    const r = await publicRestaurant(req.params.slug);
     const zones = (await db.query('select distinct zone from dining_tables where restaurant_id = $1 and active', [r.id])).rows.map((z: any) => z.zone);
     return {
       name: r.name, address: r.address, phone: r.phone, zones, max_party_size: r.max_party_size,
@@ -102,7 +122,7 @@ export async function buildApp(db: Db, deps: Deps, opts: AppOptions = {}): Promi
   });
 
   app.get('/api/r/:slug/availability', async (req: any) => {
-    const r = await getRestaurantBySlug(db, req.params.slug);
+    const r = await publicRestaurant(req.params.slug);
     const slots = await findAvailability(db, r, {
       date: String(req.query.date ?? ''), partySize: Number(req.query.party ?? 2), zone: req.query.zone || undefined, now: deps.now(),
     });
@@ -111,7 +131,7 @@ export async function buildApp(db: Db, deps: Deps, opts: AppOptions = {}): Promi
 
   app.post('/api/r/:slug/reservations', async (req: any, reply: any) => {
     bookLimit(req.ip);
-    const r = await getRestaurantBySlug(db, req.params.slug);
+    const r = await publicRestaurant(req.params.slug);
     const b = req.body ?? {};
     if (b.website) throw new AppError(400, 'spam', 'Odbijeno'); // honeypot polje
     const { reservation, guaranteeUrl } = await createReservation(db, deps, r, {
@@ -122,7 +142,7 @@ export async function buildApp(db: Db, deps: Deps, opts: AppOptions = {}): Promi
   });
 
   app.get('/api/r/:slug/reservations/:code', async (req: any) => {
-    const r = await getRestaurantBySlug(db, req.params.slug);
+    const r = await publicRestaurant(req.params.slug);
     const res = await getByCode(db, r, req.params.code);
     await verifyGuest(db, res, req.query.contact);
     return { code: res.code, status: res.status, party_size: res.party_size, ...utcToLocal(new Date(res.start_at), r.timezone) };
@@ -130,14 +150,14 @@ export async function buildApp(db: Db, deps: Deps, opts: AppOptions = {}): Promi
 
   app.post('/api/r/:slug/reservations/:code/cancel', async (req: any) => {
     bookLimit(req.ip);
-    const r = await getRestaurantBySlug(db, req.params.slug);
+    const r = await publicRestaurant(req.params.slug);
     const res = await cancelReservation(db, deps, r, req.params.code, req.body?.contact);
     return { code: res.code, status: res.status };
   });
 
   app.post('/api/r/:slug/reservations/:code/modify', async (req: any) => {
     bookLimit(req.ip);
-    const r = await getRestaurantBySlug(db, req.params.slug);
+    const r = await publicRestaurant(req.params.slug);
     const b = req.body ?? {};
     const res = await modifyReservation(db, deps, r, req.params.code, b.contact, {
       date: b.date, time: b.time, partySize: b.partySize ? Number(b.partySize) : undefined,
@@ -147,7 +167,7 @@ export async function buildApp(db: Db, deps: Deps, opts: AppOptions = {}): Promi
 
   app.post('/api/r/:slug/chat', async (req: any) => {
     chatLimit(req.ip);
-    const r = await getRestaurantBySlug(db, req.params.slug);
+    const r = await publicRestaurant(req.params.slug);
     const sessionId = String(req.body?.sessionId ?? '');
     if (!/^[A-Za-z0-9_-]{8,64}$/.test(sessionId)) throw new AppError(400, 'bad_session', 'Neispravan sessionId');
     const { reply } = await runChat(db, deps, r, { channel: 'chat', externalId: sessionId, text: String(req.body?.message ?? '') });
@@ -182,6 +202,7 @@ export async function buildApp(db: Db, deps: Deps, opts: AppOptions = {}): Promi
     }
     if (!role) throw new AppError(401, 'unauthorized', 'Neispravan ključ');
     if (ownerOnly && role !== 'owner') throw new AppError(403, 'owner_only', 'Ovo može samo vlasnik');
+    if (r.subscription_status === 'pending') throw new AppError(402, 'payment_pending', 'Prijava čeka plaćanje pretplate');
     req.role = role;
     return r;
   }
@@ -238,6 +259,10 @@ export async function buildApp(db: Db, deps: Deps, opts: AppOptions = {}): Promi
     out.whatsapp_connected = !!r.whatsapp_phone_number_id;
     out.fiscal_enabled = !!(r.fiscal_config as any)?.enabled;
     out.role = req.role;
+    out.subscription_status = r.subscription_status;
+    out.voice_number = r.voice_number;
+    out.meta_app_id = opts.metaAppId ?? null;
+    out.meta_config_id = opts.metaConfigId ?? null;
     return out;
   });
 
@@ -433,11 +458,129 @@ export async function buildApp(db: Db, deps: Deps, opts: AppOptions = {}): Promi
     return { updated: sets.length };
   });
 
+  // ---------- samoprijava ----------
+  const signupLimit = rateLimiter(5, 3600_000);
+  app.post('/api/signup', async (req: any, reply: any) => {
+    signupLimit(req.ip);
+    const b = req.body ?? {};
+    if (b.website) throw new AppError(400, 'spam', 'Odbijeno');
+    const res = await signup(db, deps, { name: b.name, email: b.email, phone: b.phone, address: b.address, acceptTerms: b.acceptTerms === true });
+    return reply.status(201).send(res);
+  });
+
+  // ---------- postavljanje (čarobnjak) ----------
+  app.get('/api/admin/:slug/setup', async (req: any) => {
+    const r = await admin(req, true);
+    const count = async (sql: string) => (await db.query(sql, [r.id])).rows[0].n as number;
+    const tables = await count('select count(*)::int as n from dining_tables where restaurant_id = $1 and active');
+    const menu = await count('select count(*)::int as n from menu_items where restaurant_id = $1');
+    const reservations = await count('select count(*)::int as n from reservations where restaurant_id = $1');
+    const steps = [
+      { key: 'hours', title: 'Radno vrijeme', done: r.opening_hours.length > 0 },
+      { key: 'tables', title: 'Stolovi (barem 2)', done: tables >= 2 },
+      { key: 'menu', title: 'Meni (za chatbot i QR narudžbe)', done: menu > 0 },
+      { key: 'info', title: 'Informacije za AI (parking, ljubimci…)', done: r.info_text.trim().length > 20 },
+      { key: 'review', title: 'Link za Google recenziju', done: !!r.google_review_url },
+      { key: 'whatsapp', title: 'WhatsApp spojen', done: !!r.whatsapp_phone_number_id, optional: true },
+      { key: 'voice', title: 'AI telefon (broj dodijeljen)', done: !!r.voice_number, optional: true },
+      { key: 'stripe', title: 'Stripe za garanciju karticom', done: !!r.stripe_account_id, optional: true },
+      { key: 'test', title: 'Prva testna rezervacija', done: reservations > 0 },
+    ];
+    return { steps, done: steps.filter((x) => !x.optional).every((x) => x.done) };
+  });
+
+  // ---------- pretplata: Stripe portal (kartica, računi, otkaz) ----------
+  app.post('/api/admin/:slug/billing/portal', async (req: any) => {
+    const r = await admin(req, true);
+    if (!deps.billing || !r.billing_customer_id) throw new AppError(409, 'no_billing', 'Ovaj restoran nema pretplatu preko Stripea');
+    return { url: await deps.billing.createPortalLink({ customerId: r.billing_customer_id, returnUrl: `${deps.config.publicBaseUrl}/admin` }) };
+  });
+
+  // ---------- AI telefon: broj, kodovi za preusmjeravanje, potrošnja ----------
+  app.get('/api/admin/:slug/voice', async (req: any) => {
+    const r = await admin(req, true);
+    const now = deps.now();
+    const period = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}`;
+    const n = r.voice_number;
+    return {
+      voice_number: n,
+      minutes_this_month: await voiceMinutes(db, r.id, period),
+      included_minutes: r.included_voice_minutes,
+      overage_cents_per_minute: r.overage_cents_per_minute,
+      // standardni GSM kodovi; utipkaju se na telefonu restorana i pritisne "zovi"
+      forwarding_codes: n ? { busy: `**67*${n}#`, no_answer: `**61*${n}**20#`, unreachable: `**62*${n}#`, cancel_all: '##002#' } : null,
+    };
+  });
+
+  // ---------- WhatsApp Embedded Signup ----------
+  app.post('/api/admin/:slug/whatsapp/connect', async (req: any) => {
+    const r = await admin(req, true);
+    const b = req.body ?? {};
+    return connectWhatsApp(db, deps, r, { code: String(b.code ?? ''), wabaId: String(b.waba_id ?? ''), phoneNumberId: String(b.phone_number_id ?? '') });
+  });
+
+  // ---------- super admin: dodjela broja za AI telefon (automatski uvoz u Retell) ----------
+  function superAuth(req: any) {
+    const key = String(req.headers['x-super-key'] ?? '');
+    if (!deps.config.superAdminKey || !safeEqual(key, deps.config.superAdminKey)) throw new AppError(401, 'unauthorized', 'Neispravan ključ');
+  }
+
+  app.put('/api/super/restaurants/:slug/voice', async (req: any) => {
+    superAuth(req);
+    const r = await getRestaurantBySlug(db, req.params.slug);
+    const number = normalizePhone(req.body?.number);
+    if (!number) throw new AppError(400, 'bad_phone', 'Neispravan broj');
+    let imported = false;
+    if (req.body?.import !== false && opts.retell) {
+      await importNumber({
+        apiKey: opts.retell.apiKey, phoneNumber: number, terminationUri: opts.retell.terminationUri,
+        agentId: opts.retell.agentId, nickname: r.slug, sipUsername: opts.retell.sipUsername, sipPassword: opts.retell.sipPassword,
+        inboundWebhookUrl: `${deps.config.publicBaseUrl}/voice/retell/inbound?secret=${encodeURIComponent(deps.config.voiceSharedSecret)}`,
+        fetchImpl: opts.fetchImpl ?? fetch,
+      });
+      imported = true;
+    }
+    await db.query('update restaurants set voice_number = $2 where id = $1', [r.id, number]);
+    return { voice_number: number, imported_to_retell: imported };
+  });
+
+  // ---------- super admin: pregled svih restorana ----------
+  app.get('/api/super/overview', async (req: any) => {
+    superAuth(req);
+    const now = deps.now();
+    const period = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}`;
+    const list = (await db.query<Restaurant>('select * from restaurants order by id')).rows;
+    const out = [];
+    for (const r of list) {
+      const res = (await db.query(
+        `select count(*)::int as n, count(*) filter (where source in ('chat','whatsapp','instagram','voice'))::int as ai
+           from reservations where restaurant_id = $1 and created_at >= date_trunc('month', $2::timestamptz)`, [r.id, now],
+      )).rows[0];
+      out.push({
+        slug: r.slug, name: r.name, email: r.email, status: r.subscription_status,
+        reservations_this_month: res.n, via_ai: res.ai,
+        voice_minutes: await voiceMinutes(db, r.id, period), included_minutes: r.included_voice_minutes,
+        whatsapp: !!r.whatsapp_phone_number_id, voice_number: r.voice_number, stripe: !!r.stripe_account_id,
+      });
+    }
+    return { period, restaurants: out, active: out.filter((x) => ['active', 'trialing', 'past_due', 'manual'].includes(x.status)).length };
+  });
+
+  app.post('/api/super/bill-overages', async (req: any) => {
+    superAuth(req);
+    return { billed: await billOverages(db, deps, deps.now()) };
+  });
+
   // ---------- Stripe webhook ----------
   app.post('/webhooks/stripe', async (req: any) => {
-    if (!opts.stripeWebhook) throw new AppError(503, 'stripe_disabled', 'Stripe nije podešen');
-    const sig = String(req.headers['stripe-signature'] ?? '');
-    const info = await opts.stripeWebhook(req.rawBody ?? '', sig);
+    if (!opts.verifyStripe) throw new AppError(503, 'stripe_disabled', 'Stripe nije podešen');
+    const event = await opts.verifyStripe(req.rawBody ?? '', String(req.headers['stripe-signature'] ?? '')).catch(() => {
+      throw new AppError(400, 'bad_signature', 'Neispravan Stripe potpis');
+    });
+    // 1) pretplata restorana (tvoj prihod)
+    if (await handleBillingEvent(db, deps, event)) return { received: true, handled: 'billing' };
+    // 2) garancija karticom gosta (Connect račun restorana)
+    const info = opts.resolveSetupSession ? await opts.resolveSetupSession(event) : null;
     if (info) await confirmGuarantee(db, deps, info.sessionId, info.paymentMethodId, info.customerId);
     return { received: true };
   });
@@ -469,7 +612,7 @@ export async function buildApp(db: Db, deps: Deps, opts: AppOptions = {}): Promi
           const phoneNumberId = v.metadata?.phone_number_id;
           if (!phoneNumberId || !v.messages) continue;
           const r = (await db.query<Restaurant>('select * from restaurants where whatsapp_phone_number_id = $1', [phoneNumberId])).rows[0];
-          if (!r) continue;
+          if (!r || !isServiceActive(r)) continue;
           for (const m of v.messages) {
             const from = '+' + String(m.from);
             const text = m.type === 'text' ? m.text?.body
@@ -479,14 +622,14 @@ export async function buildApp(db: Db, deps: Deps, opts: AppOptions = {}): Promi
             const reply = text
               ? (await runChat(db, deps, r, { channel: 'whatsapp', externalId: from, text, callerPhone: from })).reply
               : 'Za sada razumijem samo tekstualne poruke. Napišite nam što trebate.';
-            await deps.transport.sendWhatsApp({ phoneNumberId, to: from, body: { type: 'text', text: reply } });
+            await deps.transport.sendWhatsApp({ phoneNumberId, to: from, body: { type: 'text', text: reply }, token: r.whatsapp_token });
           }
         }
       }
     } else if (body.object === 'instagram' || body.object === 'page') {
       for (const entry of body.entry ?? []) {
         const r = (await db.query<Restaurant>('select * from restaurants where instagram_account_id = $1', [String(entry.id)])).rows[0];
-        if (!r) continue;
+        if (!r || !isServiceActive(r)) continue;
         for (const ev of entry.messaging ?? []) {
           if (ev.message?.is_echo || !ev.message?.text) continue;
           const sender = String(ev.sender?.id);
@@ -517,6 +660,42 @@ export async function buildApp(db: Db, deps: Deps, opts: AppOptions = {}): Promi
     if (!deps.config.voiceSharedSecret || !safeEqual(s, deps.config.voiceSharedSecret)) throw new AppError(401, 'unauthorized', 'Neispravan ključ');
   }
 
+  function dynamicVars(r: Restaurant) {
+    const local = utcToLocal(deps.now(), r.timezone);
+    const DAYS = ['', 'ponedjeljak', 'utorak', 'srijeda', 'četvrtak', 'petak', 'subota', 'nedjelja'];
+    return {
+      restaurant_name: r.name, today: `${DAYS[local.weekday]}, ${local.date}`, now_time: local.time,
+      restaurant_phone: r.phone ?? '', max_party_size: String(r.max_party_size),
+    };
+  }
+
+  // ZAJEDNIČKI agent za sve restorane: restoran = broj koji je gost nazvao (call.to_number)
+  app.post('/voice/retell', async (req: any) => {
+    voiceAuth(req);
+    const b = req.body ?? {};
+    const r = await restaurantByVoiceNumber(db, b.call?.to_number);
+    const name = String(b.name ?? req.query.fn ?? '');
+    return executeTool(db, deps, r, name, b.args ?? (b.name ? {} : b), { source: 'voice', callerPhone: b.call?.from_number ?? null });
+  });
+
+  app.post('/voice/retell/inbound', async (req: any) => {
+    voiceAuth(req);
+    const c = req.body?.call_inbound ?? {};
+    try {
+      const r = await restaurantByVoiceNumber(db, c.to_number);
+      return { call_inbound: { dynamic_variables: dynamicVars(r) } };
+    } catch {
+      // nepoznat broj ili neaktivna pretplata → odbij poziv umjesto da agent priča gluposti
+      return { call_inbound: { reject: true } };
+    }
+  });
+
+  // Retell agent webhook (call_ended…): trajanje poziva za obračun minuta
+  app.post('/voice/retell/events', async (req: any) => {
+    voiceAuth(req);
+    return { recorded: await recordCall(db, req.body) };
+  });
+
   // Retell šalje { name, args, call: { from_number, ... } } na URL funkcije
   app.post('/voice/retell/:slug', async (req: any) => {
     voiceAuth(req);
@@ -533,19 +712,7 @@ export async function buildApp(db: Db, deps: Deps, opts: AppOptions = {}): Promi
   app.post('/voice/retell/:slug/inbound', async (req: any) => {
     voiceAuth(req);
     const r = await getRestaurantBySlug(db, req.params.slug);
-    const local = utcToLocal(deps.now(), r.timezone);
-    const DAYS = ['', 'ponedjeljak', 'utorak', 'srijeda', 'četvrtak', 'petak', 'subota', 'nedjelja'];
-    return {
-      call_inbound: {
-        dynamic_variables: {
-          restaurant_name: r.name,
-          today: `${DAYS[local.weekday]}, ${local.date}`,
-          now_time: local.time,
-          restaurant_phone: r.phone ?? '',
-          max_party_size: String(r.max_party_size),
-        },
-      },
-    };
+    return { call_inbound: { dynamic_variables: dynamicVars(r) } };
   });
 
   return app;

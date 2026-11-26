@@ -11,6 +11,8 @@ Projekt: Opsis Restoran — multi-tenant sustav za restorane (rezervacije, AI ch
 - Nikad ne spremaj brojeve kartica; samo Stripe tokene.
 - Fiskalizacija je isključena dok se ne testira na CIS demo okolini — ne uključuj je bez Frankove potvrde.
 - Upit za Google recenziju po defaultu traži odobrenje osoblja (review_mode = 'approval'); nikad ga ne šalji gostu koji nije bio (status seated/completed).
+- Javne usluge (rezervacije, chat, QR, voice, WhatsApp) rade samo kad je `isServiceActive(r)`; panel radi i kad je pretplata otkazana.
+- AI telefon: JEDAN zajednički Retell agent; restoran se određuje po `call.to_number` (`restaurants.voice_number`).
 - Ne mijenjaj tekstove poruka gostima bez provjere sva tri jezika (hr/en/de) u `src/services/messages.ts`.
 
 ## Sljedeći zadaci (po prioritetu)
@@ -19,4 +21,4 @@ Projekt: Opsis Restoran — multi-tenant sustav za restorane (rezervacije, AI ch
 3. SMS kao rezervni kanal (npr. Infobip ili Twilio) za goste bez WhatsAppa.
 4. Fiskalizacija: test na CIS demo, PNP, storno, ispis računa.
 
-Gotovo: Stripe Connect onboarding iz panela, spojeni stolovi, ključevi za osoblje (owner/staff), GDPR brisanje, integracije preko super admina, Retell potpis.
+Gotovo: samoprijava + pretplata, zajednički voice agent i naplata minuta, WhatsApp Embedded Signup, čarobnjak, CI/CD (vidi docs/automatizacija.md), Stripe Connect onboarding iz panela, spojeni stolovi, ključevi za osoblje (owner/staff), GDPR brisanje, integracije preko super admina, Retell potpis.

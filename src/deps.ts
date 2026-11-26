@@ -26,9 +26,21 @@ export interface Payments {
   }): Promise<string>;
 }
 
+/** Tvoja naplata pretplate restoranima (Stripe Billing na TVOM računu, ne Connect). */
+export interface Billing {
+  createSubscriptionCheckout(input: {
+    restaurantId: number; email: string; restaurantName: string; successUrl: string; cancelUrl: string;
+  }): Promise<{ id: string; url: string }>;
+  /** Dodaje stavku (npr. višak minuta) na sljedeći račun kupca. */
+  addInvoiceItem(input: { customerId: string; amountCents: number; description: string }): Promise<void>;
+  /** Link na Stripe portal gdje restoran mijenja karticu, vidi račune ili otkazuje. */
+  createPortalLink(input: { customerId: string; returnUrl: string }): Promise<string>;
+}
+
 export interface Transport {
   sendEmail(input: { to: string; subject: string; text: string; replyTo?: string | null }): Promise<void>;
-  sendWhatsApp(input: { phoneNumberId: string; to: string; body: WhatsAppBody }): Promise<void>;
+  /** token = token restorana iz Embedded Signupa; bez njega se koristi globalni META_ACCESS_TOKEN */
+  sendWhatsApp(input: { phoneNumberId: string; to: string; body: WhatsAppBody; token?: string | null }): Promise<void>;
   sendInstagram(input: { igAccountId: string; recipientId: string; text: string }): Promise<void>;
 }
 
@@ -46,7 +58,16 @@ export interface LLM {
 export interface Deps {
   config: Config;
   payments: Payments | null;   // null = Stripe nije podešen
+  billing?: Billing | null;    // null = pretplata se ne naplaćuje (restorani odmah aktivni)
+  meta?: MetaOnboarding | null;
   transport: Transport;
   llm: LLM | null;             // null = chatbot isključen
   now: () => Date;
+}
+
+/** WhatsApp Embedded Signup (Meta Tech Provider): spajanje broja restorana bez tvog ručnog rada. */
+export interface MetaOnboarding {
+  exchangeCode(code: string): Promise<string>;                       // → business token restorana
+  subscribeApp(wabaId: string, token: string): Promise<void>;        // webhook poruke s tog WABA-e idu nama
+  registerNumber(phoneNumberId: string, token: string, pin: string): Promise<void>;
 }

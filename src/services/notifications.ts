@@ -43,7 +43,7 @@ export async function enqueueGuestMessage(
 export async function processOutbox(db: Db, deps: Deps, limit = 50): Promise<number> {
   const now = deps.now();
   const { rows } = await db.query<any>(
-    `select o.*, r.whatsapp_phone_number_id, r.instagram_account_id, r.email as restaurant_email
+    `select o.*, r.whatsapp_phone_number_id, r.whatsapp_token, r.instagram_account_id, r.email as restaurant_email
        from outbox o join restaurants r on r.id = o.restaurant_id
       where o.sent_at is null and o.send_after <= $1 and o.attempts < 5
       order by o.id limit $2`,
@@ -58,6 +58,7 @@ export async function processOutbox(db: Db, deps: Deps, limit = 50): Promise<num
       } else if (m.channel === 'whatsapp') {
         await deps.transport.sendWhatsApp({
           phoneNumberId: m.whatsapp_phone_number_id,
+          token: m.whatsapp_token,
           to: m.recipient,
           body: p.template
             ? { type: 'template', name: p.template, language: p.language, params: p.params }

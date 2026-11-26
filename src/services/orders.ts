@@ -1,6 +1,6 @@
 // Faza 2: QR meni po stolu, narudžbe, poziv konobara, zahtjev za račun.
 import type { Db } from '../db.js';
-import { AppError, type DiningTable } from './types.js';
+import { AppError, isServiceActive, type DiningTable } from './types.js';
 
 export const EU_ALLERGENS = [
   'gluten', 'rakovi', 'jaja', 'riba', 'kikiriki', 'soja', 'mlijeko', 'orašasti plodovi',
@@ -56,9 +56,10 @@ export async function publicMenu(db: Db, restaurantId: number) {
 
 export async function tableByQr(db: Db, qrToken: string): Promise<DiningTable & { slug: string; restaurant_name: string }> {
   const { rows } = await db.query(
-    `select t.*, r.slug, r.name as restaurant_name from dining_tables t join restaurants r on r.id = t.restaurant_id
+    `select t.*, r.slug, r.name as restaurant_name, r.subscription_status from dining_tables t join restaurants r on r.id = t.restaurant_id
       where t.qr_token = $1 and t.active`, [qrToken]);
   if (!rows[0]) throw new AppError(404, 'table_not_found', 'Nepoznat QR kod');
+  if (!isServiceActive(rows[0])) throw new AppError(402, 'subscription_inactive', 'Narudžbe preko QR koda trenutno nisu dostupne');
   return rows[0];
 }
 

@@ -9,7 +9,7 @@ export function fakeTransport(): Transport & { sent: Sent[] } {
   return {
     sent,
     async sendEmail(i) { sent.push({ channel: 'email', to: i.to, body: i }); },
-    async sendWhatsApp(i) { sent.push({ channel: 'whatsapp', to: i.to, body: i.body }); },
+    async sendWhatsApp(i) { sent.push({ channel: 'whatsapp', to: i.to, body: i.body, token: i.token ?? null } as any); },
     async sendInstagram(i) { sent.push({ channel: 'instagram', to: i.recipientId, body: i.text }); },
   };
 }

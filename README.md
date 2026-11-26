@@ -4,6 +4,8 @@ Sve-u-jednom sustav za restorane: online rezervacije, AI chatbot (web, WhatsApp,
 
 Jedan server služi više restorana (svaki ima svoj `slug` i ključ za panel).
 
+**Automatizacija** (samoprijava, pretplata, WhatsApp samospajanje, jedan AI telefon za sve, naplata viška minuta, CI/CD): [docs/automatizacija.md](docs/automatizacija.md)
+
 ## Što je gotovo
 
 | Dio | Status |
@@ -19,6 +21,11 @@ Jedan server služi više restorana (svaki ima svoj `slug` i ključ za panel).
 | Spojeni stolovi za veće grupe (rezervacija spojenih blokira sve njihove stolove) | ✅ testirano |
 | Ključevi za osoblje: vlasnik vs konobar (konobar ne mijenja meni/stolove/postavke), opoziv ključa | ✅ testirano |
 | GDPR: brisanje podataka gosta na zahtjev | ✅ testirano |
+| Samoprijava `/start` + pretplata 100 €/mj (Stripe Billing), email s ključem, gašenje usluga kad pretplata padne, Stripe portal | ✅ testirano s lažnim Stripeom |
+| Jedan Retell agent za sve restorane (po nazvanom broju), automatski uvoz broja, mjerenje minuta, naplata viška | ✅ testirano s lažnim Retellom |
+| WhatsApp Embedded Signup (token po restoranu) | ✅ testirano s lažnom Metom |
+| Čarobnjak "Postavljanje" u panelu, super admin pregled | ✅ testirano u pregledniku |
+| GitHub Actions: testovi + automatski deploy na VPS | ⚠️ napisano, pokreće se kad dodaš VPS secrets |
 | Stripe Connect: vlasnik u panelu klikne "Spoji Stripe" i prođe onboarding | ✅ testirano s lažnim Stripeom |
 | Spajanje WhatsApp/Instagram/Stripe ID-jeva za restoran (`PUT /api/super/restaurants/SLUG/integrations`) | ✅ testirano |
 | Panel za restoran `/admin`: rezervacije, narudžbe (zvuk), meni, stolovi + QR linkovi, postavke, statistika | ✅ testirano u pregledniku |
@@ -37,7 +44,7 @@ npm start            # bez DATABASE_URL koristi bazu u memoriji + demo restoran
 - Rezervacija: http://localhost:3000/b/demo-konoba
 - Panel: http://localhost:3000/admin (oznaka `demo-konoba`, ključ `demo-key`)
 - QR meni: http://localhost:3000/m/demo-qr-3
-- Testovi: `npm test` (44 testa) · provjera tipova: `npm run typecheck`
+- Testovi: `npm test` (53 testa) · provjera tipova: `npm run typecheck`
 
 ## Produkcija (Hostinger VPS + Supabase)
 

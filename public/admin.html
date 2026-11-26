@@ -52,10 +52,12 @@
     <button data-tab="tables">Stolovi i QR</button>
     <button data-tab="settings">Postavke</button>
     <button data-tab="stats">Statistika</button>
+    <button data-tab="setup">Postavljanje <span id="setupBadge" class="tag"></span></button>
   </nav>
   <span style="flex:1"></span><button class="b" id="logout">Odjava</button>
 </header>
 <main>
+  <div id="subBanner" class="card hidden" style="border-color:#e0b4b0;background:#fdf3f2"></div>
   <div id="err"></div>
 
   <section data-p="res">
@@ -149,6 +151,24 @@
     </div>
   </section>
 
+  <section data-p="setup" class="hidden">
+    <div class="card"><b>Postavljanje restorana</b> <span class="muted" id="setupSum"></span><table style="margin-top:8px"><tbody id="setupList"></tbody></table></div>
+    <div class="card">
+      <b>WhatsApp</b>
+      <p class="muted">Gosti dobivaju potvrde i podsjetnike na WhatsApp, a chatbot odgovara na poruke. Spajate svoj broj kroz Metin prozor (2 minute). Broj možete i dalje koristiti u WhatsApp Business aplikaciji ako ga Meta to dopusti za vaš račun.</p>
+      <p><button class="b p" id="waConnect">Spoji WhatsApp</button> <span id="waMsg" class="muted"></span></p>
+    </div>
+    <div class="card">
+      <b>AI telefon</b>
+      <div id="voiceInfo" class="muted">Učitavam…</div>
+    </div>
+    <div class="card">
+      <b>Pretplata</b>
+      <p class="muted">Promjena kartice, računi i otkaz.</p>
+      <p><button class="b" id="billPortal">Upravljaj pretplatom</button> <span id="billMsg" class="muted"></span></p>
+    </div>
+  </section>
+
   <section data-p="stats" class="hidden">
     <div class="stats" id="stCards"></div>
     <div class="card"><table><thead><tr><th>Izvor</th><th>Status</th><th>Rezervacija</th><th>Gostiju</th></tr></thead><tbody id="stList"></tbody></table><p class="muted">Zadnjih 30 dana.</p></div>
@@ -184,7 +204,7 @@ $('lGo').onclick = async () => {
 document.querySelectorAll('nav button').forEach((b) => b.onclick = () => {
   document.querySelectorAll('nav button').forEach((x) => x.classList.toggle('on', x === b));
   document.querySelectorAll('section[data-p]').forEach((s) => s.classList.toggle('hidden', s.dataset.p !== b.dataset.tab));
-  ({ res: loadRes, orders: loadOrders, menu: loadMenu, tables: loadTables, settings: loadSettings, stats: loadStats })[b.dataset.tab]();
+  ({ res: loadRes, orders: loadOrders, menu: loadMenu, tables: loadTables, settings: loadSettings, stats: loadStats, setup: loadSetup })[b.dataset.tab]();
 });
 const guard = (fn) => async (...a) => { $('err').textContent = ''; try { await fn(...a); } catch (e) { $('err').textContent = e.message; } };
 
@@ -307,7 +327,9 @@ $('tSave').onclick = guard(async () => {
 const loadSettings = guard(async () => {
   const s = await api('/settings'); SET = s;
   const owner = s.role === 'owner';
-  ['menu', 'tables', 'settings', 'stats'].forEach((t) => document.querySelector(`nav button[data-tab=${t}]`).classList.toggle('hidden', !owner));
+  const SUB = { canceled: 'Pretplata je otkazana: gosti ne mogu rezervirati online, a chatbot i AI telefon su isključeni.', past_due: 'Plaćanje pretplate nije prošlo. Ažurirajte karticu u kartici "Postavljanje" da usluga ne stane.' };
+  $('subBanner').classList.toggle('hidden', !SUB[s.subscription_status]); $('subBanner').textContent = SUB[s.subscription_status] || '';
+  ['menu', 'tables', 'settings', 'stats', 'setup'].forEach((t) => document.querySelector(`nav button[data-tab=${t}]`).classList.toggle('hidden', !owner));
   loadStaff();
   $('hName').textContent = s.name;
   $('sName').value = s.name; $('sPhone').value = s.phone || ''; $('sEmail').value = s.email || ''; $('sAddress').value = s.address || '';
@@ -356,6 +378,57 @@ $('gDel').onclick = guard(async () => {
   $('gMsg').textContent = d.anonymized ? 'Obrisano.' : 'Gost nije pronađen.'; $('gContact').value = '';
 });
 
+// ---- postavljanje ----
+const loadSetup = guard(async () => {
+  const d = await api('/setup');
+  const left = d.steps.filter((x) => !x.done && !x.optional).length;
+  $('setupBadge').textContent = left ? left : '✓';
+  $('setupSum').textContent = d.done ? '— sve obavezno je gotovo' : `— još ${left} obavezn${left === 1 ? 'i korak' : 'ih koraka'}`;
+  const GO = { hours: 'settings', tables: 'tables', menu: 'menu', info: 'settings', review: 'settings', stripe: 'settings', test: 'res' };
+  $('setupList').innerHTML = d.steps.map((x) => `<tr><td style="width:28px">${x.done ? '✅' : '⬜'}</td><td>${esc(x.title)}${x.optional ? ' <span class="muted">(opcionalno)</span>' : ''}</td>
+    <td>${!x.done && GO[x.key] ? `<button class="b" data-go="${GO[x.key]}">Otvori</button>` : ''}</td></tr>`).join('');
+  $('setupList').querySelectorAll('[data-go]').forEach((b) => b.onclick = () => document.querySelector(`nav button[data-tab=${b.dataset.go}]`).click());
+  const v = await api('/voice');
+  $('voiceInfo').innerHTML = v.voice_number
+    ? `<p>Broj AI telefona: <b>${esc(v.voice_number)}</b> · ovaj mjesec ${v.minutes_this_month} / ${v.included_minutes} min (višak ${(v.overage_cents_per_minute / 100).toFixed(2).replace('.', ',')} €/min)</p>
+       <p>Na telefonu restorana utipkajte kod i pritisnite "zovi":</p>
+       <ul><li>kad je zauzeto: <code>${esc(v.forwarding_codes.busy)}</code></li>
+       <li>kad se nitko ne javi 20 s: <code>${esc(v.forwarding_codes.no_answer)}</code></li>
+       <li>kad je telefon nedostupan: <code>${esc(v.forwarding_codes.unreachable)}</code></li>
+       <li>isključi sve: <code>${esc(v.forwarding_codes.cancel_all)}</code></li></ul>
+       <p class="muted">Kodovi su standardni GSM; ako ih vaš operater ili centrala ne prima, nazovite operatera i tražite preusmjeravanje na gornji broj.</p>`
+    : '<p>Broj za AI telefon još nije dodijeljen. Javite nam se i dobit ćete ga u roku 24 h.</p>';
+});
+
+// WhatsApp Embedded Signup (Facebook JS SDK)
+let waSession = null;
+window.addEventListener('message', (ev) => {
+  if (!/facebook\.com$/.test(new URL(ev.origin).hostname)) return;
+  try { const d = JSON.parse(ev.data); if (d.type === 'WA_EMBEDDED_SIGNUP' && d.event === 'FINISH') waSession = d.data; } catch {}
+});
+function loadFbSdk(appId) {
+  return new Promise((res) => {
+    if (window.FB) return res();
+    window.fbAsyncInit = () => { FB.init({ appId, autoLogAppEvents: true, xfbml: false, version: 'v21.0' }); res(); };
+    const sc = document.createElement('script'); sc.src = 'https://connect.facebook.net/en_US/sdk.js'; sc.async = true; document.body.appendChild(sc);
+  });
+}
+$('waConnect').onclick = guard(async () => {
+  if (!SET.meta_app_id || !SET.meta_config_id) { $('waMsg').textContent = 'WhatsApp spajanje još nije uključeno na serveru. Javite nam se.'; return; }
+  await loadFbSdk(SET.meta_app_id);
+  FB.login((resp) => {
+    const code = resp.authResponse && resp.authResponse.code;
+    if (!code || !waSession) { $('waMsg').textContent = 'Spajanje nije dovršeno.'; return; }
+    api('/whatsapp/connect', { method: 'POST', body: JSON.stringify({ code, waba_id: waSession.waba_id, phone_number_id: waSession.phone_number_id }) })
+      .then(() => { $('waMsg').textContent = 'WhatsApp je spojen ✓'; loadSetup(); })
+      .catch((e) => { $('waMsg').textContent = e.message; });
+  }, { config_id: SET.meta_config_id, response_type: 'code', override_default_response_type: true, extras: { setup: {}, sessionInfoVersion: '3' } });
+});
+$('billPortal').onclick = guard(async () => {
+  try { const d = await api('/billing/portal', { method: 'POST', body: '{}' }); location.href = d.url; }
+  catch (e) { $('billMsg').textContent = e.message; }
+});
+
 // ---- statistika ----
 const loadStats = guard(async () => {
   const d = await api('/stats');
@@ -370,7 +443,13 @@ const loadStats = guard(async () => {
 function start() {
   $('login').classList.add('hidden'); $('app').classList.remove('hidden');
   $('rDate').value = todayStr(); $('nDate').value = todayStr();
-  loadSettings().then(loadRes); loadOrders();
+  loadSettings().then(async () => {
+    loadRes();
+    if (SET && SET.role === 'owner') {
+      try { const d = await api('/setup'); if (!d.done) document.querySelector('nav button[data-tab=setup]').click(); else $('setupBadge').textContent = '✓'; } catch {}
+    }
+  });
+  loadOrders();
   setInterval(() => S && loadOrders(), 10_000);
 }
 if (S) start(); else $('login').classList.remove('hidden');

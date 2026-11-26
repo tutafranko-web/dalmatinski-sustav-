@@ -1,5 +1,6 @@
 import { createMemDb, createPgDb, migrate } from './db.js';
-import { anthropicLLM, consoleTransport, readSetupSession, realTransport, stripePayments, verifyStripeEvent } from './adapters.js';
+import { anthropicLLM, consoleTransport, metaOnboarding, readSetupSession, realTransport, stripeBilling, stripePayments, verifyStripeEvent } from './adapters.js';
+import { billOverages } from './services/billing.js';
 import { buildApp } from './server.js';
 import { startScheduler } from './jobs/scheduler.js';
 import { httpsCisSender } from './fiscal/cis.js';
@@ -32,6 +33,12 @@ async function main() {
       ? realTransport({ smtpUrl: env.SMTP_URL, mailFrom: env.MAIL_FROM, metaAccessToken: env.META_ACCESS_TOKEN, graphVersion: env.META_GRAPH_VERSION })
       : consoleTransport(),
     llm: env.ANTHROPIC_API_KEY ? anthropicLLM(env.ANTHROPIC_API_KEY) : null,
+    billing: env.STRIPE_SECRET_KEY && env.STRIPE_PRICE_ID
+      ? stripeBilling(env.STRIPE_SECRET_KEY, { priceId: env.STRIPE_PRICE_ID, trialDays: Number(env.TRIAL_DAYS ?? 14), automaticTax: env.STRIPE_AUTOMATIC_TAX === 'true' })
+      : null,
+    meta: env.META_APP_ID && env.META_APP_SECRET
+      ? metaOnboarding({ appId: env.META_APP_ID, appSecret: env.META_APP_SECRET, graphVersion: env.META_GRAPH_VERSION })
+      : null,
     now: () => new Date(),
   };
 
@@ -39,13 +46,24 @@ async function main() {
   const app = await buildApp(db, deps, {
     logger: true,
     cisSender,
-    stripeWebhook: env.STRIPE_SECRET_KEY && env.STRIPE_WEBHOOK_SECRET
-      ? async (raw, sig) => readSetupSession(env.STRIPE_SECRET_KEY!, verifyStripeEvent(env.STRIPE_SECRET_KEY!, env.STRIPE_WEBHOOK_SECRET!, raw, sig))
+    verifyStripe: env.STRIPE_SECRET_KEY && (env.STRIPE_WEBHOOK_SECRET || env.STRIPE_CONNECT_WEBHOOK_SECRET)
+      ? async (raw, sig) => verifyStripeEvent(env.STRIPE_SECRET_KEY!, [env.STRIPE_WEBHOOK_SECRET ?? '', env.STRIPE_CONNECT_WEBHOOK_SECRET ?? ''], raw, sig)
       : null,
+    resolveSetupSession: env.STRIPE_SECRET_KEY ? (event) => readSetupSession(env.STRIPE_SECRET_KEY!, event) : null,
+    retell: env.RETELL_API_KEY && env.RETELL_AGENT_ID && env.RETELL_SIP_TERMINATION_URI
+      ? { apiKey: env.RETELL_API_KEY, agentId: env.RETELL_AGENT_ID, terminationUri: env.RETELL_SIP_TERMINATION_URI,
+          sipUsername: env.RETELL_SIP_USERNAME, sipPassword: env.RETELL_SIP_PASSWORD }
+      : null,
+    metaAppId: env.META_APP_ID,
+    metaConfigId: env.META_EMBEDDED_SIGNUP_CONFIG_ID,
   });
 
   startScheduler(db, deps);
   setInterval(() => purgeOldChats(db).catch(console.error), 6 * 3600_000);
+  // višak minuta AI telefona → na račun restorana (prvih 5 dana u mjesecu, svaki sat; idempotentno)
+  setInterval(() => {
+    if (new Date().getUTCDate() <= 5) billOverages(db, deps, new Date()).catch(console.error);
+  }, 3600_000);
   if (cisSender) setInterval(() => resendFailed(db, { send: cisSender }).catch(console.error), 10 * 60_000);
 
   await app.listen({ port: Number(env.PORT ?? 3000), host: '0.0.0.0' });

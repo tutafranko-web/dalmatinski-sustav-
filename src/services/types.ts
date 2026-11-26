@@ -25,6 +25,19 @@ export interface Restaurant {
   admin_api_key: string;
   info_text: string;
   fiscal_config: Record<string, any>;
+  subscription_status: 'pending' | 'trialing' | 'active' | 'past_due' | 'canceled' | 'manual';
+  billing_customer_id: string | null;
+  billing_subscription_id: string | null;
+  voice_number: string | null;
+  included_voice_minutes: number;
+  overage_cents_per_minute: number;
+  whatsapp_waba_id: string | null;
+  whatsapp_token: string | null;
+}
+
+/** Restoran radi za goste ako pretplata nije istekla ili otkazana. */
+export function isServiceActive(r: Pick<Restaurant, 'subscription_status'>): boolean {
+  return ['trialing', 'active', 'past_due', 'manual'].includes(r.subscription_status);
 }
 
 export interface DiningTable {
